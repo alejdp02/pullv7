@@ -160,6 +160,24 @@ async function loadQuantities(){
       restock: !!r.restock
     });
   }
+  for(const r of Object.values(getPend())){            // unsent changes from this phone win
+    if(r.user_id === u.id) qtyMap.set(keyFor(r.category, r.item_name), { qty: clamp0(Number(r.qty || 0)), restock: !!r.restock });
+  }
+  flushPending();
+}
+
+// ---------- offline-safe pending writes ----------
+const PEND_KEY = 'phx_pending';
+function getPend(){ try{ return JSON.parse(localStorage.getItem(PEND_KEY) || '{}'); }catch{ return {}; } }
+function setPend(o){ try{ localStorage.setItem(PEND_KEY, JSON.stringify(o)); }catch{} }
+async function flushPending(){
+  const u = session?.user; if(!u || !navigator.onLine) return;
+  const rows = Object.values(getPend()).filter(r=>r.user_id === u.id);
+  if(!rows.length) return;
+  const { error } = await supa.from('quantities').upsert(rows, { onConflict: 'user_id,category,item_name' });
+  if(error) return;
+  const p = getPend(); for(const r of rows) delete p[keyFor(r.category, r.item_name)]; setPend(p);
+  setSaveState('Synced'); setTimeout(()=>{ if(!saveQueue.size) setSaveState('Ready'); }, 1200);
 }
 
 // ---------- saving (debounced per item) ----------
@@ -173,7 +191,7 @@ function queueSave(category, name, next){
   const tid = setTimeout(async ()=>{
     saveQueue.delete(k);
     const ok = await persistRow(category, name, next);
-    if(!ok){ setSaveState('Not saved'); toast('Could not save. Check your connection.'); return; }
+    if(!ok){ setSaveState('Saved on phone, will sync'); return; }
     if(saveQueue.size === 0) setSaveState('Saved');
     setTimeout(()=>{ if(saveQueue.size===0) setSaveState('Ready'); }, 900);
   }, 320);
@@ -191,9 +209,13 @@ async function persistRow(category, name, next){
     restock: !!next.restock,
     updated_at: new Date().toISOString()
   };
+  const k = keyFor(category, name);
+  const pend = getPend(); pend[k] = row; setPend(pend);        // write-ahead: survives signal loss or closing the app
+  if(!navigator.onLine) return false;
   const { error } = await supa.from('quantities').upsert(row, { onConflict: 'user_id,category,item_name' });
-  if(error) console.error('upsert error', error);
-  return !error;
+  if(error){ console.error('upsert error', error); return false; }
+  const p2 = getPend(); if(p2[k] && p2[k].updated_at === row.updated_at){ delete p2[k]; setPend(p2); }
+  return true;
 }
 
 // ---------- undo ----------
@@ -338,11 +360,14 @@ function sectionTemplate(category, listHtml, sectionTotal){
   const c = collapsed.has(category);
   return `
     <section class="sec${c ? ' is-collapsed' : ''}">
-      <button class="sec-head" type="button" data-sec-toggle="${escapeHtml(category)}" aria-expanded="${!c}">
-        <span>${escapeHtml(category)}</span>
-        <span class="sec-total">${sectionTotal}</span>
-        <svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
-      </button>
+      <div class="sec-head">
+        <button class="sec-toggle" type="button" data-sec-toggle="${escapeHtml(category)}" aria-expanded="${!c}">
+          <svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+          <span>${escapeHtml(category)}</span>
+        </button>
+        <span class="sec-total muted">Total: <b>${sectionTotal}</b></span>
+        <button class="btn small-btn" type="button" data-fill="${escapeHtml(category)}">Fill to PAR</button>
+      </div>
       <div class="list" data-sec-list="${escapeHtml(category)}">${listHtml}</div>
     </section>`;
 }
@@ -351,13 +376,14 @@ function itemCardTemplate(it, st){
   const k = keyFor(it.category, it.name);
   const qty = clamp0(st?.qty || 0);
   const restock = !!st?.restock;
-  const note = [it.note, it.shelf ? `Shelf: ${it.shelf}` : ''].filter(Boolean).join(' • ');
+  const note = [it.note, it.shelf ? `Shelf life: ${it.shelf}` : ''].filter(Boolean).join(' • ');
   const par = getPar(it);
   return `
     <div class="item-card" data-key="${escapeHtml(k)}" data-category="${escapeHtml(it.category)}" data-name="${escapeHtml(it.name)}">
-      <div class="item-info">
+      <div class="item-info" title="Tap for +5 / +10">
         <div class="item-name">${escapeHtml(it.name)}</div>
         ${note ? `<div class="item-meta">${escapeHtml(note)}</div>` : ''}
+        <div class="par-note"></div>
       </div>
       <div class="item-controls">
         <button class="par-btn" type="button" data-par="${escapeHtml(k)}" ${par ? '' : 'disabled'} title="Set quantity to PAR">PAR ${par || '–'}</button>
@@ -368,11 +394,19 @@ function itemCardTemplate(it, st){
           <button class="step" type="button" data-step="1" aria-label="Increase">+</button>
         </div>
       </div>
+      <div class="quick">
+        <button class="btn small-btn" type="button" data-step="-5">−5</button>
+        <button class="btn small-btn" type="button" data-step="5">+5</button>
+        <button class="btn small-btn" type="button" data-step="10">+10</button>
+      </div>
     </div>`;
 }
 
+function hasQty(s){ return /^\s*\d+\s+\S/.test(s) || /\S\s*[xX]\s*\d+\s*$/.test(s) || /\S\s+\d+\s*$/.test(s); }
+
 function getFilters(){
-  const s = ($('#search')?.value || '').trim().toLowerCase();
+  const raw = $('#search')?.value || '';
+  const s = hasQty(raw) ? '' : raw.trim().toLowerCase();   // "2 croissant" is quick-add, not a search
   const onlyQty = !!$('#onlyQty')?.checked;
   const onlyRestock = !!$('#onlyRestock')?.checked;
   return { s, onlyQty, onlyRestock };
@@ -429,10 +463,20 @@ function updateTotals(){
   let total = 0;
   $$('[data-sec-list]').forEach(list=>{
     let sum = 0;
-    $$('.item-card', list).forEach(card=>{ sum += clamp0((qtyMap.get(card.dataset.key) || {}).qty || 0); });
+    $$('.item-card', list).forEach(card=>{
+      const q = clamp0((qtyMap.get(card.dataset.key) || {}).qty || 0);
+      sum += q;
+      const par = getPar(itemsByKey.get(card.dataset.key));
+      const note = card.querySelector('.par-note');
+      if(par){
+        const d = par - q;
+        card.dataset.status = d > 0 ? 'low' : d === 0 ? 'ok' : 'over';
+        note.textContent = d > 0 ? `Need ${d} more` : d === 0 ? 'At PAR' : `${-d} over PAR`;
+      }else{ delete card.dataset.status; note.textContent = ''; }
+    });
     total += sum;
-    const t = list.closest('.sec')?.querySelector('.sec-total');
-    if(t) t.textContent = sum;
+    const b = list.closest('.sec')?.querySelector('.sec-total b');
+    if(b) b.textContent = sum;
   });
   $('#totalAll').textContent = total;
 }
@@ -483,29 +527,28 @@ function wireListInteractions(){
     updateTotals();
   }
 
+  let held = false;
   root.addEventListener('pointerdown', (e)=>{
     const btn = e.target.closest('button[data-step]');
     if(!btn) return;
-
-    const card = e.target.closest('.item-card');
-    if(!card) return;
-
-    e.preventDefault();
+    const card = btn.closest('.item-card'); if(!card) return;
     const delta = Number(btn.dataset.step || 0);
-
-    holdBtn = btn;
-    step(card, delta);
-
+    holdBtn = btn; held = false;
     holdTimer = setTimeout(()=>{
-      holdInterval = setInterval(()=>{
-        if(!holdBtn) return;
-        step(card, delta);
-      }, 85);
-    }, 320);
+      held = true;
+      step(card, delta);
+      holdInterval = setInterval(()=>{ if(holdBtn) step(card, delta); }, 110);
+    }, 450);
   });
-
+  root.addEventListener('click', (e)=>{
+    const btn = e.target.closest('button[data-step]');
+    if(!btn) return;
+    if(held){ held = false; return; }      // a long-press already stepped
+    const card = btn.closest('.item-card'); if(!card) return;
+    step(card, Number(btn.dataset.step || 0));
+  });
   window.addEventListener('pointerup', stopHold);
-  window.addEventListener('pointercancel', stopHold);
+  window.addEventListener('pointercancel', stopHold);   // fires when the finger starts scrolling
   window.addEventListener('blur', stopHold);
   root.addEventListener('pointermove', (e)=>{
     if(holdBtn && !holdBtn.contains(document.elementFromPoint(e.clientX, e.clientY))) stopHold();
@@ -586,9 +629,10 @@ function wireListInteractions(){
 
 // ---------- quick add behavior ----------
 function wireQuickAdd(){
-  const el = $('#quickAdd');
+  const el = $('#search');
   el.addEventListener('keydown', (e)=>{
     if(e.key !== 'Enter') return;
+    if(!hasQty(el.value)) return;          // plain text = search only
     e.preventDefault();
     const parsed = parseQuickAdd(el.value);
     if(!parsed) return;
@@ -607,88 +651,118 @@ function wireQuickAdd(){
     log('qty_change', { category: it.category, item: it.name, qty: next.qty, via:'quick_add' });
 
     el.value = '';
+    el.dispatchEvent(new Event('input'));
     updateTotals();
     toast(`+${parsed.qty} • ${it.name}`);
   });
 }
 
 // ---------- pull sheet ----------
-function renderPullSheet(){
+let pulled = new Set();
+const pulledKey = ()=>`phx_pulled_${session?.user?.id || 'x'}_${new Date().toISOString().slice(0,10)}`;
+function loadPulled(){ try{ pulled = new Set(JSON.parse(localStorage.getItem(pulledKey()) || '[]')); }catch{ pulled = new Set(); } }
+function savePulled(){ try{ localStorage.setItem(pulledKey(), JSON.stringify([...pulled])); }catch{} }
+
+function orderCats(cats){
+  let o = []; try{ o = JSON.parse(localStorage.getItem('phx_cat_order') || '[]'); }catch{}
+  return cats.slice().sort((a,b)=>{
+    const ia = o.indexOf(a), ib = o.indexOf(b);
+    if(ia < 0 && ib < 0) return a.localeCompare(b);
+    if(ia < 0) return 1; if(ib < 0) return -1; return ia - ib;
+  });
+}
+function moveCat(cat, dir){
+  const cats = orderCats(Array.from(pullGroups().byCat.keys()));
+  const i = cats.indexOf(cat), j = i + dir;
+  if(i < 0 || j < 0 || j >= cats.length) return;
+  [cats[i], cats[j]] = [cats[j], cats[i]];
+  try{ localStorage.setItem('phx_cat_order', JSON.stringify(cats)); }catch{}
+  renderPullSheet();
+}
+function useByLabel(it){
+  const m = String(it.shelf || '').match(/(\d+)\s*(days?|d|weeks?|wks?|w)\b/i);
+  if(!m) return '';
+  const days = parseInt(m[1], 10) * (/^w/i.test(m[2]) ? 7 : 1);
+  return 'Use by ' + new Date(Date.now() + days * 864e5).toLocaleDateString(undefined, { weekday:'short', month:'numeric', day:'numeric' });
+}
+function updateSheetProg(){
+  const rows = $$('#sheetBody .sheet-row'), done = $$('#sheetBody .sheet-row.done').length;
+  $('#sheetProg').textContent = `${done} of ${rows.length} pulled`;
+  $('#sheetBar').style.width = rows.length ? `${Math.round(done / rows.length * 100)}%` : '0%';
+}
+
+function pullGroups(){
+  const restock = [];
   const byCat = new Map();
-
   for(const it of items){
-    const k = keyFor(it.category, it.name);
-    const st = qtyMap.get(k) || { qty:0 };
-    if(clamp0(st.qty) <= 0) continue;
-    const arr = byCat.get(it.category) || [];
-    arr.push({ it, qty: clamp0(st.qty), restock: !!(qtyMap.get(k)?.restock) });
-    byCat.set(it.category, arr);
+    const st = qtyMap.get(keyFor(it.category, it.name)) || { qty:0, restock:false };
+    const qty = clamp0(st.qty);
+    if(st.restock){ restock.push({ it, qty }); continue; }
+    if(qty <= 0) continue;
+    if(!byCat.has(it.category)) byCat.set(it.category, []);
+    byCat.get(it.category).push({ it, qty });
   }
+  return { restock, byCat };
+}
 
-  const cats = Array.from(byCat.keys()).sort((a,b)=>a.localeCompare(b));
-  if(cats.length === 0){
-    $('#sheetBody').innerHTML = `<div class="muted">Nothing to pull yet. Add quantities first.</div>`;
+function renderPullSheet(){
+  const { restock, byCat } = pullGroups();
+  const cats = orderCats(Array.from(byCat.keys()));
+  if(!restock.length && !cats.length){
+    $('#sheetBody').innerHTML = `<div class="empty">Nothing to pull yet. Add quantities first.</div>`;
+    updateSheetProg();
     return;
   }
-
+  const row = (x, withCat) => {
+    const k = keyFor(x.it.category, x.it.name);
+    const sub = [withCat ? x.it.category : '', useByLabel(x.it)].filter(Boolean).join(' • ');
+    return `<div class="sheet-row${pulled.has(k) ? ' done' : ''}" data-pk="${escapeHtml(k)}"><span class="tick"></span><b>${x.qty}</b><span class="nm">${escapeHtml(x.it.name)}${sub ? `<small>${escapeHtml(sub)}</small>` : ''}</span></div>`;
+  };
+  const block = (title, rows, withCat, cls, movable) => `
+    <section class="sheet-sec ${cls}">
+      <div class="sheet-head"><span>${escapeHtml(title)}</span><span class="mvs">${rows.length}${movable ? `
+        <button type="button" class="mv" data-mv="-1" data-cat="${escapeHtml(title)}" aria-label="Move up">▲</button>
+        <button type="button" class="mv" data-mv="1" data-cat="${escapeHtml(title)}" aria-label="Move down">▼</button>` : ''}</span></div>
+      ${rows.map(x=>row(x, withCat)).join('')}
+    </section>`;
   let html = '';
-  for(const c of cats){
-    const list = byCat.get(c);
-    html += `<div class="card" style="padding:12px;background:rgba(255,255,255,.04);margin-bottom:10px">
-      <div class="row" style="justify-content:space-between">
-        <div class="title">${escapeHtml(c)}</div>
-        <div class="pill">Items: ${list.length}</div>
-      </div>
-      <div style="margin-top:8px">
-        <table class="table">
-          <thead><tr><th>Item</th><th class="right">Qty</th><th>Restock</th></tr></thead>
-          <tbody>
-            ${list.map(x=>`<tr><td>${escapeHtml(x.it.name)}</td><td class="right"><b>${x.qty}</b></td><td>${x.restock?'✅':''}</td></tr>`).join('')}
-          </tbody>
-        </table>
-      </div>
-    </div>`;
-  }
+  if(restock.length) html += block('Restock', restock, true, 'restock', false);
+  for(const c of cats) html += block(c, byCat.get(c), false, '', true);
   $('#sheetBody').innerHTML = html;
+  updateSheetProg();
 }
 
 async function openPullSheet(){
+  loadPulled();
   renderPullSheet();
   $('#sheetDlg').showModal();
   await log('pull_sheet_open', {});
 }
 
 // ---------- bulk tools ----------
-async function setVisibleItemsToPar(){
-  const cards = $$('.item-card');
-  if(cards.length === 0){ toast('Nothing visible'); return; }
-
+async function setCardsToPar(cards, onlyRaise){
+  if(!cards.length){ toast('Nothing visible'); return; }
   let changed = 0;
   undoGroup = 'g' + Date.now();
-
   for(const card of cards){
     const k = card.dataset.key;
-    const it = itemsByKey.get(k);
-    const prev = qtyMap.get(k) || { qty:0, restock:false };
-
-    // compute par (same rules as per-card)
-    const par = getPar(it);
+    const par = getPar(itemsByKey.get(k));
     if(!par) continue;
-
+    const prev = qtyMap.get(k) || { qty:0, restock:false };
+    if(onlyRaise ? prev.qty >= par : prev.qty === par) continue;
     const next = { ...prev, qty: par };
     qtyMap.set(k, next);
     applyStateToUI(k, next);
-
     pushUndo(k, prev, next);
     queueSave(card.dataset.category, card.dataset.name, next);
     changed++;
   }
-
   undoGroup = null;
   updateTotals();
   await log('set_par', { bulk: true, changed });
-  toast(changed ? `Set ${changed} items to PAR` : 'No PAR values found');
+  toast(changed ? `Set ${changed} items to PAR` : 'Already at PAR');
 }
+function setVisibleItemsToPar(){ return setCardsToPar($$('.item-card'), false); }
 
 async function resetShift(){
   const ok = confirm("Start fresh shift? This will set all quantities to 0 (items stay).");
@@ -709,6 +783,7 @@ async function resetShift(){
   }
 
   undoStack = [];
+  pulled.clear(); savePulled();
   $('#undoBtn').disabled = true;
   updateTotals();
   await log('reset_shift', { changed });
@@ -1085,8 +1160,12 @@ function wireGlobal(){
   $('#closeSheet').onclick = ()=>$('#sheetDlg').close();
   $('#copySheet').onclick = async ()=>{
     const text = sheetToText();
-    await navigator.clipboard.writeText(text);
-    toast('Copied');
+    try{ await navigator.clipboard.writeText(text); toast('Copied'); }
+    catch{
+      const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select();
+      try{ document.execCommand('copy'); toast('Copied'); }catch{ toast('Copy failed'); }
+      ta.remove();
+    }
   };
 
   $('#setVisibleToPar').onclick = setVisibleItemsToPar;
@@ -1132,23 +1211,16 @@ function wireGlobal(){
 }
 
 function sheetToText(){
-  // Text version for clipboard
+  const { restock, byCat } = pullGroups();
   const lines = [];
-  const byCat = new Map();
-  for(const it of items){
-    const k = keyFor(it.category, it.name);
-    const st = qtyMap.get(k) || { qty:0, restock:false };
-    if(clamp0(st.qty) <= 0) continue;
-    const arr = byCat.get(it.category) || [];
-    arr.push({ name: it.name, qty: clamp0(st.qty), restock: !!st.restock });
-    byCat.set(it.category, arr);
+  if(restock.length){
+    lines.push('== RESTOCK ==');
+    for(const x of restock) lines.push(`${x.qty}  ${x.it.name} (${x.it.category})`);
+    lines.push('');
   }
-  const cats = Array.from(byCat.keys()).sort((a,b)=>a.localeCompare(b));
-  for(const c of cats){
+  for(const c of orderCats(Array.from(byCat.keys()))){
     lines.push(`== ${c} ==`);
-    for(const x of byCat.get(c)){
-      lines.push(`${x.qty}  ${x.name}${x.restock ? '  [restock]' : ''}`);
-    }
+    for(const x of byCat.get(c)) lines.push(`${x.qty}  ${x.it.name}${useByLabel(x.it) ? '  (' + useByLabel(x.it) + ')' : ''}`);
     lines.push('');
   }
   return lines.join('\n').trim() || 'Nothing to pull yet.';
@@ -1218,24 +1290,66 @@ async function adminOpen(){
 })();
 
 
-// ---------- UI wiring (layout v5) ----------
+// ---------- UI wiring (layout v6) ----------
 (function wireUi(){
-  const find = $('#search'), add = $('#quickAdd');
-  function setMode(m){
-    document.body.dataset.mode = m;
-    $$('[data-mode-btn]').forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.modeBtn === m)));
-    if(m === 'add' && find.value){ find.value = ''; renderAll(); }
-    (m === 'add' ? add : find).focus();
+  const box = $('#search');
+  // one box: plain text filters; "2 croissant" / "muffin x3" shows what Enter will add
+  box.addEventListener('input', ()=>{
+    const hint = $('#qaHint');
+    if(!hasQty(box.value)){ hint.classList.add('hidden'); return; }
+    const p = parseQuickAdd(box.value), it = p && bestItemMatch(p.query);
+    hint.textContent = it ? `Press Enter to add ${p.qty} × ${it.name}` : 'No matching item';
+    hint.classList.remove('hidden');
+  });
+
+  $('#sections').addEventListener('click', (e)=>{
+    const f = e.target.closest('[data-fill]');
+    if(f){
+      const list = document.querySelector(`[data-sec-list="${CSS.escape(f.dataset.fill)}"]`);
+      if(list) setCardsToPar($$('.item-card', list), true);   // only raises items that are below PAR
+      return;
+    }
+    const info = e.target.closest('.item-info');
+    if(info) info.closest('.item-card').classList.toggle('open');   // reveals −5 / +5 / +10
+  });
+
+  // pull sheet checklist
+  $('#sheetBody').addEventListener('click', (e)=>{
+    const mv = e.target.closest('[data-mv]');
+    if(mv){ moveCat(mv.dataset.cat, Number(mv.dataset.mv)); return; }
+    const r = e.target.closest('.sheet-row');
+    if(!r) return;
+    const k = r.dataset.pk;
+    if(pulled.has(k)) pulled.delete(k); else pulled.add(k);
+    r.classList.toggle('done', pulled.has(k));
+    savePulled(); updateSheetProg();
+  });
+  $('#clearPulled').onclick = ()=>{ pulled.clear(); savePulled(); renderPullSheet(); };
+  $('#printSheet').onclick = ()=>window.print();
+  $('#shareSheet').onclick = async ()=>{
+    const text = sheetToText();
+    try{ if(navigator.share) await navigator.share({ title: 'Pull sheet', text }); else $('#copySheet').click(); }
+    catch{ /* share cancelled */ }
+  };
+
+  // keep the screen awake while pulling (needs https)
+  let wl = null;
+  async function keepAwake(){
+    try{
+      if('wakeLock' in navigator && document.visibilityState === 'visible' && !wl){
+        wl = await navigator.wakeLock.request('screen');
+        wl.addEventListener('release', ()=>{ wl = null; });
+      }
+    }catch{}
   }
-  $$('[data-mode-btn]').forEach(b=>{ b.onclick = ()=>setMode(b.dataset.modeBtn); });
+  document.addEventListener('visibilitychange', keepAwake);
+  document.addEventListener('pointerdown', keepAwake, { passive: true });
 
-  const menu = $('#moreMenu');
-  $('#moreBtn').onclick = (e)=>{ e.stopPropagation(); menu.classList.toggle('hidden'); };
-  document.addEventListener('click', (e)=>{ if(!e.target.closest('#moreBtn')) menu.classList.add('hidden'); });
+  // retry unsent changes when signal returns
+  window.addEventListener('online', flushPending);
+  setInterval(flushPending, 20000);
 
-  // tap the dimmed backdrop to close any dialog
+  document.addEventListener('focusin', (e)=>{ if(e.target.matches && e.target.matches('.qty-input')) e.target.select(); });
   $$('dialog').forEach(d=>d.addEventListener('click', (e)=>{ if(e.target === d) d.close(); }));
-
-  // don't lose debounced saves if the tab is closed
   window.addEventListener('beforeunload', (e)=>{ if(saveQueue.size){ e.preventDefault(); e.returnValue = ''; } });
 })();

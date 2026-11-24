@@ -20,8 +20,9 @@
   --accent:#6b9bff; --accent-ink:#0b1220; --flag:#fdba74; --flag-bg:#3a2210; --danger:#fda29b;
 }}
 *{box-sizing:border-box}
-html,body{height:100%}
-body{margin:0;font-family:var(--sans);background:var(--bg);color:var(--ink);font-size:15px;line-height:1.4;overflow-x:hidden;-webkit-text-size-adjust:100%}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;min-height:100vh;min-height:100dvh;font-family:var(--sans);background:var(--bg);color:var(--ink);font-size:15px;line-height:1.4;overflow-x:clip;overscroll-behavior-y:contain;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+body:has(dialog[open]){overflow:hidden}
 .hidden{display:none!important}
 .row{display:flex;align-items:center;gap:10px}
 .spacer{flex:1}.grow{flex:1;min-width:0}
@@ -29,7 +30,7 @@ body{margin:0;font-family:var(--sans);background:var(--bg);color:var(--ink);font
 .right{text-align:right}.mono{font-family:var(--mono)}
 .hint{font-size:13px;color:var(--muted)}
 .title{font-weight:800;letter-spacing:-.01em}
-.wrap{max-width:1180px;margin:0 auto;padding:0 max(14px,env(safe-area-inset-left)) 0 max(14px,env(safe-area-inset-right))}
+.wrap{max-width:1180px;margin:0 auto;padding:0 max(14px,env(safe-area-inset-right)) 0 max(14px,env(safe-area-inset-left))}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
 /* controls */
@@ -60,7 +61,8 @@ input[type=checkbox]{min-height:0;width:18px;height:18px;padding:0;accent-color:
 body[data-mode=find] #quickAdd,body[data-mode=add] #search{display:none}
 .total{display:flex;align-items:baseline;gap:6px;color:var(--muted);font-size:13px;white-space:nowrap}
 .total b{font-size:22px;color:var(--ink);font-variant-numeric:tabular-nums}
-.chips{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding:2px 0;-webkit-overflow-scrolling:touch}
+.toolbar .row{min-width:0}
+.chips{flex:1;min-width:0;display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding:2px 0;-webkit-overflow-scrolling:touch}
 .chips::-webkit-scrollbar{display:none}
 #categoryChips{display:contents}
 .chip{min-height:36px;padding:0 14px;border-radius:999px;border:1px solid var(--line);background:var(--surface);font:inherit;font-size:14px;font-weight:600;color:var(--ink);white-space:nowrap;cursor:pointer;display:inline-flex;align-items:center;gap:6px;flex:none}
@@ -72,7 +74,8 @@ body[data-mode=find] #quickAdd,body[data-mode=add] #search{display:none}
 #sections{display:grid;gap:14px;grid-template-columns:1fr;align-items:start;padding:14px 0 120px}
 @media(min-width:960px){#sections{grid-template-columns:1fr 1fr}}
 .sec,.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
-.sec-head{width:100%;display:flex;align-items:center;gap:10px;padding:12px 14px;background:transparent;border:0;color:var(--ink);font:inherit;font-weight:800;cursor:pointer;text-align:left}
+.sec-head{display:flex;align-items:center;gap:10px;padding:2px 12px 2px 14px}
+.sec-toggle{flex:1;display:flex;align-items:center;gap:8px;min-height:46px;padding:0;background:transparent;border:0;color:var(--ink);font:inherit;font-weight:800;text-align:left;cursor:pointer}
 .sec-total{margin-left:auto;color:var(--muted);font-weight:600;font-variant-numeric:tabular-nums}
 .chev{transition:transform .15s;color:var(--muted)}
 .is-collapsed .chev{transform:rotate(-90deg)}
@@ -82,7 +85,7 @@ body[data-mode=find] #quickAdd,body[data-mode=add] #search{display:none}
 @media(min-width:640px){.item-info{flex:1 1 0}}
 .item-name{font-weight:700;overflow-wrap:anywhere}
 .item-meta{font-size:12px;color:var(--muted)}
-.item-controls{display:flex;align-items:center;gap:8px;margin-left:auto}
+.item-controls{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:8px;margin-left:auto}
 .par-btn{min-height:36px;padding:0 10px;border-radius:10px;border:1px dashed var(--line);background:transparent;color:var(--muted);font:inherit;font-size:13px;font-weight:600;cursor:pointer;font-variant-numeric:tabular-nums}
 .par-btn:disabled{opacity:.45;cursor:default}
 .flag{min-height:36px;padding:0 10px;border-radius:10px;border:1px solid var(--line);color:var(--muted);font-size:13px;font-weight:600;display:inline-flex;align-items:center;cursor:pointer;position:relative}
@@ -90,9 +93,9 @@ body[data-mode=find] #quickAdd,body[data-mode=add] #search{display:none}
 .flag:has(input:checked){background:var(--flag-bg);border-color:var(--flag);color:var(--flag)}
 .flag:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:2px}
 .stepper{display:flex;align-items:center;background:var(--bg);border:1px solid var(--line);border-radius:12px}
-.step{width:44px;height:44px;border:0;background:transparent;color:var(--ink);font-size:22px;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;border-radius:12px}
+.step{-webkit-touch-callout:none;width:48px;height:48px;border:0;background:transparent;color:var(--ink);font-size:22px;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;border-radius:12px}
 .step:active{background:var(--line)}
-.qty-input{width:52px;min-height:44px;height:44px;text-align:center;border:0;background:transparent;font-size:18px;font-weight:800;padding:0;font-variant-numeric:tabular-nums;-moz-appearance:textfield}
+.qty-input{width:56px;min-height:48px;height:48px;text-align:center;border:0;background:transparent;font-size:18px;font-weight:800;padding:0;font-variant-numeric:tabular-nums;-moz-appearance:textfield}
 .qty-input::-webkit-outer-spin-button,.qty-input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 .empty{padding:28px 16px;text-align:center;color:var(--muted)}
 
@@ -105,7 +108,7 @@ body[data-mode=find] #quickAdd,body[data-mode=add] #search{display:none}
 .toast.show{display:block}
 
 /* dialogs */
-dialog{border:0;padding:0;border-radius:16px;width:min(760px,calc(100vw - 24px));max-height:min(88dvh,760px);color:var(--ink);background:var(--surface);box-shadow:0 24px 80px rgba(0,0,0,.35);overflow:hidden}
+dialog{border:0;padding:0;border-radius:16px;width:min(760px,calc(100vw - 24px));max-height:88vh;max-height:min(88dvh,760px);color:var(--ink);background:var(--surface);box-shadow:0 24px 80px rgba(0,0,0,.35);overflow:hidden}
 dialog[open]{display:flex;flex-direction:column}
 dialog::backdrop{background:rgba(0,0,0,.5)}
 .modal-head{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:center;flex:none}
@@ -113,7 +116,8 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
 @media(max-width:600px){dialog{width:100vw;max-width:100vw;max-height:92dvh;margin:auto 0 0;border-radius:16px 16px 0 0}}
 .badge{font-size:12px;padding:3px 10px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
 .scroll{overflow-x:auto}
-.table{width:100%;border-collapse:collapse;font-size:13px;min-width:480px}
+.table{width:100%;border-collapse:collapse;font-size:13px}
+.scroll .table{min-width:480px}
 .table th,.table td{padding:10px;border-bottom:1px solid var(--line);vertical-align:top;text-align:left}
 .table th{color:var(--muted);font-weight:700}
 .table .right{text-align:right}
@@ -124,6 +128,41 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 @media(max-width:520px){.two{grid-template-columns:1fr}}
 .tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+
+/* phone extras + pull sheet */
+.menu-who{padding:8px 12px;font-size:13px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+body:has(:is(input[type=search],input[type=text],input[type=number]):focus) .dock{display:none}
+.sheet-sec{border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:12px}
+.sheet-head{display:flex;justify-content:space-between;padding:10px 14px;background:var(--bg);font-weight:800}
+.sheet-sec.restock{border-color:var(--flag)}
+.sheet-sec.restock .sheet-head{background:var(--flag-bg);color:var(--flag)}
+.sheet-row{display:flex;align-items:center;gap:14px;padding:10px 14px;border-top:1px solid var(--line)}
+.sheet-row b{min-width:34px;font-size:20px;font-variant-numeric:tabular-nums}
+.sheet-row small{display:block;color:var(--muted);font-size:12px}
+
+/* v6: status, quick buttons, checklist sheet */
+:root{--ok:#0f7b4f}@media(prefers-color-scheme:dark){:root{--ok:#4ade80}}
+.who{margin:-4px 0 6px;max-width:100%;font-size:12px}
+.chip.act{border-style:dashed}.chip.warn{color:var(--danger)}
+.item-info{cursor:pointer}
+.par-note{font-size:12px;font-weight:700}
+.item-card[data-status=low]{box-shadow:inset 3px 0 0 var(--flag)}.item-card[data-status=low] .par-note{color:var(--flag)}
+.item-card[data-status=ok]{box-shadow:inset 3px 0 0 var(--ok)}.item-card[data-status=ok] .par-note{color:var(--ok)}
+.item-card[data-status=over]{box-shadow:inset 3px 0 0 var(--accent)}.item-card[data-status=over] .par-note{color:var(--accent)}
+.quick{display:none;flex:1 1 100%;gap:8px}.open .quick{display:flex}.quick .btn{flex:1}
+.sheet-prog{font-weight:700;margin-bottom:10px}
+.bar{height:6px;border-radius:6px;background:var(--line);margin-top:6px;overflow:hidden}.bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .2s}
+.sheet-row{cursor:pointer;-webkit-user-select:none;user-select:none}
+.tick{width:26px;height:26px;border-radius:8px;border:2px solid var(--line);display:grid;place-items:center;flex:none;font-size:16px;font-weight:800}
+.sheet-row.done{opacity:.5}.sheet-row.done .nm{text-decoration:line-through}
+.sheet-row.done .tick{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}.sheet-row.done .tick::after{content:"✓"}
+.mv{min-width:36px;min-height:32px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);font-size:12px;cursor:pointer}
+.sheet-head .mvs{display:flex;gap:6px;align-items:center}
+@media print{
+  #view-app>:not(#sheetDlg){display:none!important}
+  #sheetDlg{position:static;display:block;max-height:none;width:auto;box-shadow:none;overflow:visible}
+  #sheetDlg .modal-head,#sheetDlg .tools,#sheetDlg .hint,.mv{display:none!important}
+}
 
 /* login */
 #view-login{min-height:100dvh;display:grid;place-items:center;padding:20px 14px}
@@ -177,29 +216,29 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
     <div class="topbar">
       <div class="brand"><i></i>Pull list</div>
       <span class="save" id="saveState">Ready</span>
-      <div class="who" id="whoBadge">…</div>
+      <div class="spacer"></div>
       <button id="adminOpen" class="btn small-btn" type="button">Admin</button>
       <button id="logoutBtn" class="btn small-btn" type="button">Log out</button>
     </div>
+    <div class="who" id="whoBadge">…</div>
   </div>
 
   <div class="toolbar">
     <div class="wrap">
       <div class="row">
-        <div class="seg" role="group" aria-label="Mode">
-          <button type="button" data-mode-btn="find" aria-pressed="true">Find</button>
-          <button type="button" data-mode-btn="add" aria-pressed="false">Add</button>
-        </div>
-        <input id="search" class="grow" type="search" placeholder="Search items" autocomplete="off" />
-        <input id="quickAdd" class="grow" type="text" placeholder="2 croissant, muffin x3, then Enter" autocomplete="off" enterkeyhint="done" />
+        <input id="search" class="grow" type="search" placeholder="Search, or quick add: 2 croissant" autocomplete="off" enterkeyhint="done" />
         <div class="total"><span>Total</span><b id="totalAll">0</b></div>
       </div>
+      <div id="qaHint" class="hint hidden" style="margin-top:6px"></div>
       <div class="row">
         <div class="chips">
           <div id="categoryChips"></div>
           <span class="sep"></span>
           <label class="chip"><input id="onlyQty" type="checkbox" />Has qty</label>
           <label class="chip"><input id="onlyRestock" type="checkbox" />Restock</label>
+          <span class="sep"></span>
+          <button id="setVisibleToPar" class="chip act" type="button">Set visible → PAR</button>
+          <button id="resetShift" class="chip act warn" type="button">Start fresh shift</button>
         </div>
       </div>
     </div>
@@ -208,27 +247,26 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
   <main class="wrap"><div id="sections"></div></main>
 
   <div class="dock">
-    <div class="wrap" style="position:relative">
+    <div class="wrap">
       <button id="undoBtn" class="btn" type="button" aria-label="Undo">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>Undo
       </button>
       <button id="pullSheetBtn" class="btn primary grow" type="button">Pull sheet</button>
-      <button id="moreBtn" class="btn" type="button" aria-label="More actions">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>
-      </button>
-      <div id="moreMenu" class="menu hidden">
-        <button id="setVisibleToPar" class="btn" type="button">Set visible items to PAR</button>
-        <button id="resetShift" class="btn danger" type="button">Start fresh shift</button>
-      </div>
     </div>
   </div>
 
   <dialog id="sheetDlg">
     <div class="modal-head"><div class="title">Pull sheet</div><div class="spacer"></div>
-      <button class="btn small-btn" id="copySheet" type="button">Copy</button>
       <button class="btn small-btn" id="closeSheet" type="button">Close</button></div>
     <div class="modal-body">
-      <div class="hint">Items with a quantity above 0, grouped by category.</div>
+      <div class="sheet-prog"><span id="sheetProg">0 of 0 pulled</span><div class="bar"><i id="sheetBar"></i></div></div>
+      <div class="tools">
+        <button class="btn small-btn" id="copySheet" type="button">Copy</button>
+        <button class="btn small-btn" id="shareSheet" type="button">Share</button>
+        <button class="btn small-btn" id="printSheet" type="button">Print</button>
+        <button class="btn small-btn" id="clearPulled" type="button">Clear checks</button>
+      </div>
+      <div class="hint">Tap an item once it's pulled. Restock comes first; use ▲ ▼ to put categories in the order you walk.</div>
       <div id="sheetBody" style="margin-top:12px"></div>
     </div>
   </dialog>
@@ -284,7 +322,7 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
         </div>
         <div class="two">
           <input id="itemPar" type="number" min="0" placeholder="PAR (optional)" />
-          <input id="itemShelf" placeholder="Shelf (optional)" />
+          <input id="itemShelf" placeholder="Shelf life (e.g. 3 days)" />
         </div>
         <textarea id="itemNote" placeholder="Note (optional), e.g. 6–8 depending on day" rows="3"></textarea>
         <label class="toggle"><input id="itemActive" type="checkbox" checked /><span>Active</span></label>
