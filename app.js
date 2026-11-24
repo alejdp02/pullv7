@@ -38,6 +38,9 @@ let currentCategory = 'all';
 
 let undoStack = [];             // {key, prev:{qty,restock}, next:{qty,restock}}
 let suppressUndo = false;
+let undoGroup = null;
+const collapsed = new Set();          // collapsed category names (survive re-render)
+let bootPromise = null;
 
 const saveQueue = new Map();    // key => timeoutId
 let saveState = 'Ready';
@@ -169,8 +172,9 @@ function queueSave(category, name, next){
 
   const tid = setTimeout(async ()=>{
     saveQueue.delete(k);
-    await persistRow(category, name, next);
-    if(saveQueue.size === 0) setSaveState('Saved ✅');
+    const ok = await persistRow(category, name, next);
+    if(!ok){ setSaveState('Not saved'); toast('Could not save. Check your connection.'); return; }
+    if(saveQueue.size === 0) setSaveState('Saved');
     setTimeout(()=>{ if(saveQueue.size===0) setSaveState('Ready'); }, 900);
   }, 320);
 
@@ -189,13 +193,20 @@ async function persistRow(category, name, next){
   };
   const { error } = await supa.from('quantities').upsert(row, { onConflict: 'user_id,category,item_name' });
   if(error) console.error('upsert error', error);
+  return !error;
 }
 
 // ---------- undo ----------
 function pushUndo(k, prev, next){
   if(suppressUndo) return;
-  undoStack.push({ key: k, prev: {...prev}, next: {...next} });
-  if(undoStack.length > 50) undoStack.shift();
+  const now = Date.now();
+  const last = undoStack[undoStack.length-1];
+  if(last && !undoGroup && !last.group && last.key === k && now - last.t < 700){
+    last.next = {...next}; last.t = now;          // merge rapid taps / hold-repeat into one step
+  }else{
+    undoStack.push({ key: k, prev: {...prev}, next: {...next}, t: now, group: undoGroup });
+    if(undoStack.length > 100) undoStack.shift();
+  }
   $('#undoBtn').disabled = undoStack.length === 0;
 }
 
@@ -209,22 +220,19 @@ function applyStateToUI(k, st){
 }
 
 async function undo(){
-  const op = undoStack.pop();
+  const first = undoStack.pop();
+  if(!first) return;
+  const ops = [first];
+  while(first.group && undoStack.length && undoStack[undoStack.length-1].group === first.group) ops.push(undoStack.pop());
   $('#undoBtn').disabled = undoStack.length === 0;
-  if(!op) return;
-
-  suppressUndo = true;
-  try{
-    qtyMap.set(op.key, { qty: op.prev.qty, restock: op.prev.restock });
-    applyStateToUI(op.key, op.prev);
-
-    const [category, name] = op.key.split('__');
-    queueSave(category, name, op.prev);
-    await log('undo', { key: op.key, to: op.prev });
-    updateTotals();
-  } finally {
-    suppressUndo = false;
+  for(const o of ops){
+    const it = itemsByKey.get(o.key); if(!it) continue;
+    qtyMap.set(o.key, { ...o.prev });
+    applyStateToUI(o.key, o.prev);
+    queueSave(it.category, it.name, o.prev);
   }
+  updateTotals();
+  await log('undo', { steps: ops.length });
 }
 
 // ---------- quick add parsing ----------
@@ -312,54 +320,55 @@ function renderCategoryChips(){
   for(const c of cats) el.appendChild(mk(c, c));
 }
 
+function getPar(it){
+  if(!it) return 0;
+  if(it.par !== null && it.par !== undefined && it.par !== '') return clamp0(Number(it.par));
+  // only trust an explicit range in the note, e.g. "6–8" (never a stray number like a shelf or temperature)
+  const m = (it.note || '').match(/(\d+)\s*[–-]\s*(\d+)/);
+  return m ? parseInt(m[2], 10) : 0;
+}
+
+const _qtyLogTimers = new Map();
+function logQtyDebounced(k, category, name, qty){
+  clearTimeout(_qtyLogTimers.get(k));
+  _qtyLogTimers.set(k, setTimeout(()=>log('qty_change', { category, item: name, qty }), 700));
+}
+
 function sectionTemplate(category, listHtml, sectionTotal){
+  const c = collapsed.has(category);
   return `
-    <div class="card" style="padding:14px; background:rgba(255,255,255,.04)">
-      <div class="section-head">
-        <h2>${escapeHtml(category)}</h2>
-        <span class="pill">Total: <b>${sectionTotal}</b></span>
-        <div class="spacer"></div>
-        <button class="btn small-btn" data-sec-toggle="${escapeHtml(category)}">Collapse</button>
-      </div>
-      <div class="list" data-sec-list="${escapeHtml(category)}">
-        ${listHtml || `<div class="muted">No items.</div>`}
-      </div>
-    </div>
-  `;
+    <section class="sec${c ? ' is-collapsed' : ''}">
+      <button class="sec-head" type="button" data-sec-toggle="${escapeHtml(category)}" aria-expanded="${!c}">
+        <span>${escapeHtml(category)}</span>
+        <span class="sec-total">${sectionTotal}</span>
+        <svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+      <div class="list" data-sec-list="${escapeHtml(category)}">${listHtml}</div>
+    </section>`;
 }
 
 function itemCardTemplate(it, st){
   const k = keyFor(it.category, it.name);
   const qty = clamp0(st?.qty || 0);
   const restock = !!st?.restock;
-  const noteBits = [];
-  if(it.note) noteBits.push(it.note);
-  if(it.shelf) noteBits.push(`Shelf: ${it.shelf}`);
-  const note = noteBits.join(' • ');
-  const par = (it.par ?? null);
-  const parLabel = par !== null && par !== undefined && par !== '' ? `PAR ${par}` : 'PAR';
+  const note = [it.note, it.shelf ? `Shelf: ${it.shelf}` : ''].filter(Boolean).join(' • ');
+  const par = getPar(it);
   return `
     <div class="item-card" data-key="${escapeHtml(k)}" data-category="${escapeHtml(it.category)}" data-name="${escapeHtml(it.name)}">
-      <div class="item-top">
-        <div class="grow">
-          <div class="item-name">${escapeHtml(it.name)}</div>
-          <div class="item-meta">${escapeHtml(note)}</div>
-        </div>
-        <div class="row" style="gap:8px; align-items:center">
-          <button class="btn small-btn" data-par="${escapeHtml(k)}">${escapeHtml(parLabel)}</button>
-          <label class="pill" title="Needs restock">
-            <input class="restock" type="checkbox" ${restock?'checked':''} />
-            Restock
-          </label>
+      <div class="item-info">
+        <div class="item-name">${escapeHtml(it.name)}</div>
+        ${note ? `<div class="item-meta">${escapeHtml(note)}</div>` : ''}
+      </div>
+      <div class="item-controls">
+        <button class="par-btn" type="button" data-par="${escapeHtml(k)}" ${par ? '' : 'disabled'} title="Set quantity to PAR">PAR ${par || '–'}</button>
+        <label class="flag" title="Needs restock"><input class="restock" type="checkbox" ${restock ? 'checked' : ''} /><span>Restock</span></label>
+        <div class="stepper">
+          <button class="step" type="button" data-step="-1" aria-label="Decrease">−</button>
+          <input class="qty-input" inputmode="numeric" type="number" min="0" value="${qty}" aria-label="Quantity" />
+          <button class="step" type="button" data-step="1" aria-label="Increase">+</button>
         </div>
       </div>
-      <div class="qty-wrap">
-        <button class="btn qty-btn" data-step="-1">−</button>
-        <input class="qty-input" inputmode="numeric" pattern="[0-9]*" type="number" min="0" value="${qty}" />
-        <button class="btn qty-btn" data-step="1">+</button>
-      </div>
-    </div>
-  `;
+    </div>`;
 }
 
 function getFilters(){
@@ -409,7 +418,7 @@ function renderAll(){
   }
 
   if(cats.length === 0){
-    host.innerHTML = `<div class="card" style="padding:16px;background:rgba(255,255,255,.04)"><div class="muted">No items match your filters.</div></div>`;
+    host.innerHTML = `<div class="empty">No items match. Clear the search or filters to see everything.</div>`;
   }
 
   updateTotals();
@@ -418,28 +427,24 @@ function renderAll(){
 
 function updateTotals(){
   let total = 0;
-
-  // only count visible item cards
-  $$('.item-card').forEach(card=>{
-    const k = card.dataset.key;
-    const st = qtyMap.get(k) || { qty:0 };
-    total += clamp0(st.qty);
+  $$('[data-sec-list]').forEach(list=>{
+    let sum = 0;
+    $$('.item-card', list).forEach(card=>{ sum += clamp0((qtyMap.get(card.dataset.key) || {}).qty || 0); });
+    total += sum;
+    const t = list.closest('.sec')?.querySelector('.sec-total');
+    if(t) t.textContent = sum;
   });
-
   $('#totalAll').textContent = total;
 }
 
 function wireSectionToggles(){
   $$('[data-sec-toggle]').forEach(btn=>{
-    if(btn._wired) return;
-    btn._wired = true;
-    btn.addEventListener('click', ()=>{
-      const cat = btn.getAttribute('data-sec-toggle');
-      const list = document.querySelector(`[data-sec-list="${CSS.escape(cat)}"]`);
-      if(!list) return;
-      const isHidden = list.classList.toggle('hidden');
-      btn.textContent = isHidden ? 'Expand' : 'Collapse';
-    });
+    btn.onclick = ()=>{
+      const cat = btn.dataset.secToggle;
+      const isC = btn.closest('.sec').classList.toggle('is-collapsed');
+      if(isC) collapsed.add(cat); else collapsed.delete(cat);
+      btn.setAttribute('aria-expanded', String(!isC));
+    };
   });
 }
 
@@ -473,7 +478,7 @@ function wireListInteractions(){
 
     pushUndo(k, prev, next);
     queueSave(category, name, next);
-    log('qty_change', { category, item: name, qty: next.qty });
+    logQtyDebounced(k, category, name, next.qty);
 
     updateTotals();
   }
@@ -499,9 +504,13 @@ function wireListInteractions(){
     }, 320);
   });
 
-  root.addEventListener('pointerup', stopHold);
-  root.addEventListener('pointercancel', stopHold);
-  root.addEventListener('pointerleave', stopHold);
+  window.addEventListener('pointerup', stopHold);
+  window.addEventListener('pointercancel', stopHold);
+  window.addEventListener('blur', stopHold);
+  root.addEventListener('pointermove', (e)=>{
+    if(holdBtn && !holdBtn.contains(document.elementFromPoint(e.clientX, e.clientY))) stopHold();
+  });
+  root.addEventListener('contextmenu', (e)=>{ if(e.target.closest('button[data-step]')) e.preventDefault(); });
 
   // qty input change
   root.addEventListener('change', (e)=>{
@@ -560,17 +569,7 @@ function wireListInteractions(){
     const prev = qtyMap.get(k) || { qty:0, restock:false };
 
     // choose par: explicit par or guess from note "6–8" / "6-8"
-    let par = it?.par;
-    if(par === null || par === undefined || par === ''){
-      const note = (it?.note || '') + ' ' + (it?.shelf || '');
-      const m = note.match(/(\d+)\s*[–\-]\s*(\d+)/);
-      if(m) par = parseInt(m[2],10);
-      else{
-        const m2 = note.match(/(\d+)/);
-        if(m2) par = parseInt(m2[1],10);
-      }
-    }
-    par = clamp0(Number(par || 0));
+    const par = getPar(it);
     if(!par){ toast('No PAR set for this item'); return; }
 
     const next = { ...prev, qty: par };
@@ -613,116 +612,43 @@ function wireQuickAdd(){
   });
 }
 
-// ---------- pull sheet + shelf-life / sticker counts ----------
-function getShelfLifeDays(category){
-  const c = String(category || '').toLowerCase();
-  if(c.includes('pastr')) return 2;
-  if(c.includes('sandwich')) return 3;
-  return null;
-}
-
-function getPullData(){
+// ---------- pull sheet ----------
+function renderPullSheet(){
   const byCat = new Map();
-  const restockByCat = new Map();
-  const stickerCounts = { pastries:0, sandwiches:0, other:0 };
-  let totalQty = 0;
-  let totalDistinct = 0;
 
   for(const it of items){
     const k = keyFor(it.category, it.name);
-    const st = qtyMap.get(k) || { qty:0, restock:false };
-    const qty = clamp0(st.qty);
-    const isRestock = !!st.restock;
-
-    // RESTOCK is independent from the pull quantity.
-    // A user can mark an item for restock even when no pull
-    // quantity has been entered yet. It should still appear
-    // in the RESTOCK section of the Pull Sheet.
-    if(isRestock){
-      const restockEntry = { it, qty, restock: true, quantitySet: qty > 0 };
-      const restockArr = restockByCat.get(it.category) || [];
-      restockArr.push(restockEntry);
-      restockByCat.set(it.category, restockArr);
-    }
-
-    // The normal PULL section only contains items with an actual
-    // quantity to pull.
-    if(qty <= 0) continue;
-
-    const entry = { it, qty, restock: isRestock, quantitySet: true };
+    const st = qtyMap.get(k) || { qty:0 };
+    if(clamp0(st.qty) <= 0) continue;
     const arr = byCat.get(it.category) || [];
-    arr.push(entry);
+    arr.push({ it, qty: clamp0(st.qty), restock: !!(qtyMap.get(k)?.restock) });
     byCat.set(it.category, arr);
-    totalQty += qty;
-    totalDistinct++;
-
-    const shelfDays = getShelfLifeDays(it.category);
-    if(shelfDays === 2) stickerCounts.pastries += qty;
-    else if(shelfDays === 3) stickerCounts.sandwiches += qty;
-    else stickerCounts.other += qty;
   }
 
-  return { byCat, restockByCat, stickerCounts, totalQty, totalDistinct };
-}
-
-function pullSectionHtml(title, list, options={}){
-  const { restock=false } = options;
-  const qty = list.reduce((sum, x)=>sum + x.qty, 0);
-  const distinct = list.length;
-  return `<section class="sheet-section ${restock ? 'sheet-restock-section':''}">
-    <div class="sheet-section-head">
-      <div>
-        <div class="sheet-section-title">${escapeHtml(title)}</div>
-        <div class="sheet-section-sub">${distinct} item${distinct===1?'':'s'} • ${qty} total unit${qty===1?'':'s'}</div>
-      </div>
-      ${restock ? '<span class="sheet-restock-badge">↻ RESTOCK</span>' : ''}
-    </div>
-    <div class="sheet-table-wrap">
-      <table class="table sheet-table">
-        <thead><tr><th>Item</th><th class="right">Qty</th>${restock ? '<th>Action</th>' : '<th>Shelf life</th>'}</tr></thead>
-        <tbody>${list.map(x=>{
-          const days = getShelfLifeDays(x.it.category);
-          const third = restock ? '<td><span class="restock-mark">Restock</span></td>' : `<td>${days ? `${days}-day` : '—'}</td>`;
-          const qtyDisplay = restock && !x.quantitySet ? '<span class="qty-unset">Not set</span>' : `<b>${x.qty}</b>`;
-          return `<tr><td><b>${escapeHtml(x.it.name)}</b></td><td class="right">${qtyDisplay}</td>${third}</tr>`;
-        }).join('')}</tbody>
-      </table>
-    </div>
-  </section>`;
-}
-
-function renderPullSheet(){
-  const { byCat, restockByCat, stickerCounts, totalQty, totalDistinct } = getPullData();
   const cats = Array.from(byCat.keys()).sort((a,b)=>a.localeCompare(b));
-
-  const summary = `
-    <div class="sheet-hero">
-      <div>
-        <div class="sheet-kicker">TODAY'S PULL</div>
-        <div class="sheet-hero-title">${totalQty} <span>units</span></div>
-        <div class="sheet-hero-sub">${totalDistinct} different item${totalDistinct===1?'':'s'}</div>
-      </div>
-      <div class="sticker-grid">
-        <div class="sticker-card sticker-2"><span class="sticker-days">2 DAYS</span><b>${stickerCounts.pastries}</b><span>Pastry stickers</span></div>
-        <div class="sticker-card sticker-3"><span class="sticker-days">3 DAYS</span><b>${stickerCounts.sandwiches}</b><span>Sandwich stickers</span></div>
-        ${stickerCounts.other ? `<div class="sticker-card"><span class="sticker-days">OTHER</span><b>${stickerCounts.other}</b><span>Other units</span></div>` : ''}
-      </div>
-    </div>`;
-
   if(cats.length === 0){
-    $('#sheetBody').innerHTML = summary + `<div class="sheet-empty">Nothing to pull yet. Add quantities first.</div>`;
+    $('#sheetBody').innerHTML = `<div class="muted">Nothing to pull yet. Add quantities first.</div>`;
     return;
   }
 
-  let html = summary + `<div class="sheet-group-label">PULL BY CATEGORY</div>`;
-  for(const c of cats) html += pullSectionHtml(c, byCat.get(c));
-
-  const restockCats = Array.from(restockByCat.keys()).sort((a,b)=>a.localeCompare(b));
-  if(restockCats.length){
-    html += `<div class="sheet-restock-header"><div><div class="sheet-group-label">RESTOCK</div><div class="sheet-restock-note">Items marked Restock, separated by category.</div></div><span class="sheet-restock-total">${restockCats.reduce((n,c)=>n+restockByCat.get(c).reduce((a,x)=>a+x.qty,0),0)} units</span></div>`;
-    for(const c of restockCats) html += pullSectionHtml(c, restockByCat.get(c), {restock:true});
+  let html = '';
+  for(const c of cats){
+    const list = byCat.get(c);
+    html += `<div class="card" style="padding:12px;background:rgba(255,255,255,.04);margin-bottom:10px">
+      <div class="row" style="justify-content:space-between">
+        <div class="title">${escapeHtml(c)}</div>
+        <div class="pill">Items: ${list.length}</div>
+      </div>
+      <div style="margin-top:8px">
+        <table class="table">
+          <thead><tr><th>Item</th><th class="right">Qty</th><th>Restock</th></tr></thead>
+          <tbody>
+            ${list.map(x=>`<tr><td>${escapeHtml(x.it.name)}</td><td class="right"><b>${x.qty}</b></td><td>${x.restock?'✅':''}</td></tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
   }
-
   $('#sheetBody').innerHTML = html;
 }
 
@@ -732,25 +658,13 @@ async function openPullSheet(){
   await log('pull_sheet_open', {});
 }
 
-function printPullSheet(){
-  renderPullSheet();
-  const body = $('#sheetBody')?.innerHTML || '';
-  const { stickerCounts, totalQty, totalDistinct } = getPullData();
-  const printWin = window.open('', '_blank', 'noopener,noreferrer,width=1100,height=800');
-  if(!printWin){ toast('Allow pop-ups to print the sheet'); return; }
-  printWin.document.write(`<!doctype html><html><head><title>Phoenix Pull Sheet</title><style>
-    *{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:0;padding:28px;background:#fff}h1{margin:0 0 4px;font-size:28px}.sub{color:#666;margin-bottom:22px}.print-summary{display:flex;gap:12px;margin:0 0 24px}.box{border:1px solid #ddd;border-radius:10px;padding:12px 16px;min-width:150px}.box b{display:block;font-size:22px;margin-top:4px}.sheet-section{border:1px solid #ddd;border-radius:10px;margin:0 0 14px;overflow:hidden}.sheet-section-head{padding:12px 14px;background:#f4f5f7;display:flex;justify-content:space-between;align-items:center}.sheet-section-title{font-size:17px;font-weight:800}.sheet-section-sub{font-size:12px;color:#666;margin-top:3px}.sheet-table{width:100%;border-collapse:collapse}.sheet-table th,.sheet-table td{padding:9px 12px;border-bottom:1px solid #eee;text-align:left}.sheet-table th{font-size:12px;color:#666;text-transform:uppercase}.sheet-table .right{text-align:right}.sheet-table tr:last-child td{border-bottom:0}.sheet-restock-section .sheet-section-head{background:#fff4e5}.sheet-restock-badge{font-size:11px;font-weight:800}.restock-mark{font-weight:700}.sheet-group-label{font-size:11px;font-weight:800;letter-spacing:.12em;color:#777;margin:22px 0 8px}.sheet-restock-header{display:flex;justify-content:space-between;align-items:end;margin-top:22px}.sheet-restock-note{color:#666;font-size:12px}.sheet-restock-total{font-weight:800}.sheet-hero{display:flex;justify-content:space-between;gap:20px;border:1px solid #ddd;border-radius:12px;padding:16px;margin-bottom:18px}.sheet-kicker{font-size:11px;letter-spacing:.14em;font-weight:800;color:#777}.sheet-hero-title{font-size:34px;font-weight:900}.sheet-hero-title span{font-size:14px;font-weight:600;color:#666}.sheet-hero-sub{color:#666;font-size:12px}.sticker-grid{display:flex;gap:10px;flex-wrap:wrap}.sticker-card{border:1px solid #ddd;border-radius:9px;padding:9px 12px;min-width:120px}.sticker-card b{display:block;font-size:22px}.sticker-days{font-size:10px;font-weight:800;color:#666}.sheet-empty{padding:18px;border:1px dashed #ccc;border-radius:10px;color:#666}.sheet-restock-header{break-before:auto}@media print{body{padding:16px}.sheet-section{break-inside:avoid}.sheet-restock-section{break-inside:avoid}}
-  </style></head><body><h1>Phoenix Pull</h1><div class="sub">Pull sheet • ${new Date().toLocaleString()}</div><div class="print-summary"><div class="box">Total units<b>${totalQty}</b></div><div class="box">Different items<b>${totalDistinct}</b></div><div class="box">2-day pastry stickers<b>${stickerCounts.pastries}</b></div><div class="box">3-day sandwich stickers<b>${stickerCounts.sandwiches}</b></div></div>${body}<script>window.onload=()=>{window.print();setTimeout(()=>window.close(),300)};<\/script></body></html>`);
-  printWin.document.close();
-  log('pull_sheet_print', {});
-}
-
 // ---------- bulk tools ----------
 async function setVisibleItemsToPar(){
   const cards = $$('.item-card');
   if(cards.length === 0){ toast('Nothing visible'); return; }
 
   let changed = 0;
+  undoGroup = 'g' + Date.now();
 
   for(const card of cards){
     const k = card.dataset.key;
@@ -758,17 +672,7 @@ async function setVisibleItemsToPar(){
     const prev = qtyMap.get(k) || { qty:0, restock:false };
 
     // compute par (same rules as per-card)
-    let par = it?.par;
-    if(par === null || par === undefined || par === ''){
-      const note = (it?.note || '') + ' ' + (it?.shelf || '');
-      const m = note.match(/(\d+)\s*[–\-]\s*(\d+)/);
-      if(m) par = parseInt(m[2],10);
-      else{
-        const m2 = note.match(/(\d+)/);
-        if(m2) par = parseInt(m2[1],10);
-      }
-    }
-    par = clamp0(Number(par || 0));
+    const par = getPar(it);
     if(!par) continue;
 
     const next = { ...prev, qty: par };
@@ -780,6 +684,7 @@ async function setVisibleItemsToPar(){
     changed++;
   }
 
+  undoGroup = null;
   updateTotals();
   await log('set_par', { bulk: true, changed });
   toast(changed ? `Set ${changed} items to PAR` : 'No PAR values found');
@@ -839,6 +744,7 @@ async function adminRenderUsers(){
     const b = e.target.closest('button'); if(!b) return;
     const id = b.dataset.id;
     const act = b.dataset.uact;
+    if(id === session?.user?.id){ toast("You can't change your own account here"); return; }
     if(act === 'toggle'){
       const { data } = await supa.from('profiles').select('active').eq('id', id).maybeSingle();
       if(!data) return;
@@ -852,29 +758,6 @@ async function adminRenderUsers(){
       await adminRenderUsers();
     }
   };
-}
-
-async function adminCreateUser(){
-  const email = prompt('New user email:');
-  if(email === null) return;
-  const cleanEmail = email.trim().toLowerCase();
-  if(!cleanEmail || !/^\S+@\S+\.\S+$/.test(cleanEmail)) return toast('Enter a valid email');
-
-  const displayName = prompt('Display name (optional):', '') || '';
-  const roleInput = (prompt('Role (user/admin):', 'user') || 'user').trim().toLowerCase();
-  if(!['user','admin'].includes(roleInput)) return toast('Role must be user or admin');
-
-  const { data, error } = await supa.functions.invoke('admin-create-user', {
-    body: { email: cleanEmail, display_name: displayName.trim(), role: roleInput }
-  });
-  if(error){
-    console.error(error);
-    toast(error.message || 'Could not create user');
-    return;
-  }
-  if(data?.error) return toast(data.error);
-  toast(`Invitation sent to ${cleanEmail} ✉️`);
-  await adminRenderUsers();
 }
 
 async function adminRenderLogFilters(){
@@ -944,7 +827,7 @@ async function adminExportCSV(){
 async function adminClearLogs(){
   const ok = confirm("Clear ALL logs? (Admin only)");
   if(!ok) return;
-  const { error } = await supa.from('interactions').delete().neq('id', 0); // delete all rows
+  const { error } = await supa.from('interactions').delete().not('created_at', 'is', null); // delete all rows (works for uuid or int ids)
   if(error){ toast('Clear failed'); return; }
   await adminRenderLogs();
   toast('Logs cleared');
@@ -1071,9 +954,21 @@ async function deleteItem(){
 // ---------- routing / init ----------
 async function afterLogin(){
   await ensureProfileForCurrentUser();
+  if(profile && profile.active === false){
+    await supa.auth.signOut(); session = null; profile = null;
+    throw new Error('This account is deactivated. Ask an admin to reactivate it.');
+  }
   $('#whoBadge').textContent = `${profile?.display_name || session.user.email} • ${profile?.role || 'user'}`;
   $('#roleBadge').textContent = `role: ${profile?.role || 'user'}`;
   $('#adminOpen').style.display = isAdmin() ? 'inline-flex' : 'none';
+}
+
+// single shared entry so password login and the auth listener never boot twice
+function enterApp(){
+  if(!bootPromise){
+    bootPromise = (async()=>{ await afterLogin(); await bootApp(); show('app'); })().finally(()=>{ bootPromise = null; });
+  }
+  return bootPromise;
 }
 
 async function bootApp(){
@@ -1082,16 +977,6 @@ async function bootApp(){
 
   renderAll();
   updateTotals();
-}
-
-function bind(id, event, handler){
-  const el = document.getElementById(id);
-  if(!el){
-    console.error(`[Phoenix Pull] Missing element #${id}; ${event} handler not attached.`);
-    return null;
-  }
-  el.addEventListener(event, handler);
-  return el;
 }
 
 function wireGlobal(){
@@ -1109,9 +994,7 @@ function wireGlobal(){
         const { data, error } = await supa.auth.signInWithPassword({ email, password: pass });
         if(error) throw error;
         session = data.session;
-        await afterLogin();
-        await bootApp();
-        show('app');
+        await enterApp();
         toast('Welcome ✨');
         await log('login', { method: 'password' });
       }else{
@@ -1177,11 +1060,9 @@ function wireGlobal(){
 
   // app view
   $('#logoutBtn').onclick = async ()=>{
-    // Log while the authenticated session still exists, then sign out.
-    await log('logout', {});
-    const { error } = await supa.auth.signOut();
-    if(error){ toast(error.message || 'Could not log out'); return; }
-    session=null; profile=null;
+    await log('logout', {});   // log BEFORE signing out (needs the session)
+    await supa.auth.signOut();
+    session=null; profile=null; items=[]; qtyMap=new Map(); undoStack=[];
     show('login');
   };
 
@@ -1207,7 +1088,6 @@ function wireGlobal(){
     await navigator.clipboard.writeText(text);
     toast('Copied');
   };
-  $('#printSheet').onclick = printPullSheet;
 
   $('#setVisibleToPar').onclick = setVisibleItemsToPar;
   $('#resetShift').onclick = resetShift;
@@ -1242,11 +1122,6 @@ function wireGlobal(){
     await deleteItem();
   };
 
-  $('#createUserBtn').onclick = async ()=>{
-    if(!isAdmin()) return toast('Admins only');
-    await adminCreateUser();
-  };
-
   $('#logUserFilter').addEventListener('change', adminRenderLogs);
   $('#logActionFilter').addEventListener('change', adminRenderLogs);
   $('#exportCSV').onclick = adminExportCSV;
@@ -1257,27 +1132,24 @@ function wireGlobal(){
 }
 
 function sheetToText(){
-  const { byCat, restockByCat, stickerCounts, totalQty } = getPullData();
-  const lines = [
-    'PHOENIX PULL SHEET',
-    `Total units: ${totalQty}`,
-    `2-day pastry stickers: ${stickerCounts.pastries}`,
-    `3-day sandwich stickers: ${stickerCounts.sandwiches}`,
-    ''
-  ];
-  for(const c of Array.from(byCat.keys()).sort((a,b)=>a.localeCompare(b))){
-    lines.push(`== ${c} ==`);
-    for(const x of byCat.get(c)) lines.push(`${x.qty}  ${x.it.name}${x.restock ? '  [restock]' : ''}`);
-    lines.push('');
+  // Text version for clipboard
+  const lines = [];
+  const byCat = new Map();
+  for(const it of items){
+    const k = keyFor(it.category, it.name);
+    const st = qtyMap.get(k) || { qty:0, restock:false };
+    if(clamp0(st.qty) <= 0) continue;
+    const arr = byCat.get(it.category) || [];
+    arr.push({ name: it.name, qty: clamp0(st.qty), restock: !!st.restock });
+    byCat.set(it.category, arr);
   }
-  const restockCats = Array.from(restockByCat.keys()).sort((a,b)=>a.localeCompare(b));
-  if(restockCats.length){
-    lines.push('== RESTOCK ==');
-    for(const c of restockCats){
-      lines.push(`-- ${c} --`);
-      for(const x of restockByCat.get(c)) lines.push(`${x.qty}  ${x.it.name}`);
-      lines.push('');
+  const cats = Array.from(byCat.keys()).sort((a,b)=>a.localeCompare(b));
+  for(const c of cats){
+    lines.push(`== ${c} ==`);
+    for(const x of byCat.get(c)){
+      lines.push(`${x.qty}  ${x.name}${x.restock ? '  [restock]' : ''}`);
     }
+    lines.push('');
   }
   return lines.join('\n').trim() || 'Nothing to pull yet.';
 }
@@ -1286,6 +1158,7 @@ function setAdminTab(tab){
   $('#tab-items').classList.toggle('hidden', tab !== 'items');
   $('#tab-users').classList.toggle('hidden', tab !== 'users');
   $('#tab-logs').classList.toggle('hidden', tab !== 'logs');
+  $$('[data-tab]').forEach(b=>b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
 }
 
 async function adminOpen(){
@@ -1307,9 +1180,7 @@ async function adminOpen(){
   await refreshSession();
   if(session){
     try{
-      await afterLogin();
-      await bootApp();
-      show('app');
+      await enterApp();
     }catch(err){
       console.warn(err);
       await supa.auth.signOut();
@@ -1321,7 +1192,7 @@ async function adminOpen(){
   }
 
   // keep session fresh
-  supa.auth.onAuthStateChange(async (_event, newSession)=>{
+  supa.auth.onAuthStateChange((_event, newSession)=>{ setTimeout(async ()=>{
     session = newSession;
     if(!session){
       profile=null;
@@ -1333,9 +1204,7 @@ async function adminOpen(){
     const loginVisible = !$('#view-login').classList.contains('hidden');
     if(loginVisible){
       try{
-        await afterLogin();
-        await bootApp();
-        show('app');
+        await enterApp();
         toast('Welcome ✨');
       }catch(err){
         console.warn(err);
@@ -1344,5 +1213,29 @@ async function adminOpen(){
         show('login');
       }
     }
+  }, 0);
   });
+})();
+
+
+// ---------- UI wiring (layout v5) ----------
+(function wireUi(){
+  const find = $('#search'), add = $('#quickAdd');
+  function setMode(m){
+    document.body.dataset.mode = m;
+    $$('[data-mode-btn]').forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.modeBtn === m)));
+    if(m === 'add' && find.value){ find.value = ''; renderAll(); }
+    (m === 'add' ? add : find).focus();
+  }
+  $$('[data-mode-btn]').forEach(b=>{ b.onclick = ()=>setMode(b.dataset.modeBtn); });
+
+  const menu = $('#moreMenu');
+  $('#moreBtn').onclick = (e)=>{ e.stopPropagation(); menu.classList.toggle('hidden'); };
+  document.addEventListener('click', (e)=>{ if(!e.target.closest('#moreBtn')) menu.classList.add('hidden'); });
+
+  // tap the dimmed backdrop to close any dialog
+  $$('dialog').forEach(d=>d.addEventListener('click', (e)=>{ if(e.target === d) d.close(); }));
+
+  // don't lose debounced saves if the tab is closed
+  window.addEventListener('beforeunload', (e)=>{ if(saveQueue.size){ e.preventDefault(); e.returnValue = ''; } });
 })();

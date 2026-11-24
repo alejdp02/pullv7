@@ -1,484 +1,302 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>Phoenix Pull</title>
-  <meta name="theme-color" content="#0ea5e9" />
-  <style>
-    :root{
-      --bg: #000000;
-      --card: rgba(255,255,255,.08);
-      --card2: rgba(255,255,255,.10);
-      --line: rgba(255,255,255,.12);
-      --text: rgba(255,255,255,.92);
-      --muted: rgba(255,255,255,.72);
-      --muted2: rgba(255,255,255,.55);
-      --brand: #38bdf8;
-      --ok: #34d399;
-      --warn: #fb7185;
-      --shadow: 0 20px 60px rgba(0,0,0,.45);
-      --radius: 18px;
-      --tap: 52px;
-      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-      --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
-    }
-    *{box-sizing:border-box}
-    html,body{height:100%}
-    body{
-      margin:0;
-      font-family:var(--sans);
-      background:#000000;
-      color:var(--text);
-      overflow-x:hidden;
-    }
-    a{color:inherit}
-    .safe-x{padding-left:max(16px, env(safe-area-inset-left)); padding-right:max(16px, env(safe-area-inset-right))}
-    .safe-b{padding-bottom:max(14px, env(safe-area-inset-bottom))}
-    .hidden{display:none!important}
-    .btn{
-      min-height:var(--tap);
-      border-radius:14px;
-      border:1px solid var(--line);
-      background:linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.06));
-      color:var(--text);
-      padding:0 14px;
-      cursor:pointer;
-      user-select:none;
-      transition:transform .05s ease, filter .15s ease;
-    }
-    .btn:active{transform:scale(.98)}
-    .btn.primary{
-      border-color:transparent;
-      background:linear-gradient(135deg, rgba(56,189,248,.95), rgba(14,165,233,.75));
-      color:#041019;
-      font-weight:800;
-      box-shadow:0 14px 40px rgba(14,165,233,.25);
-    }
-    .btn.ghost{background:transparent}
-    .btn.danger{
-      border-color:rgba(251,113,133,.35);
-      background:linear-gradient(180deg, rgba(251,113,133,.22), rgba(251,113,133,.10));
-      color:#ffe4e6;
-    }
-    .chip{
-      min-height:40px;
-      border-radius:999px;
-      border:1px solid var(--line);
-      background:rgba(255,255,255,.06);
-      padding:0 12px;
-      display:inline-flex;
-      align-items:center;
-      gap:8px;
-      cursor:pointer;
-      white-space:nowrap;
-    }
-    .chip.active{
-      border-color:transparent;
-      background:rgba(56,189,248,.18);
-      box-shadow:0 10px 24px rgba(56,189,248,.10);
-    }
-    .card{
-      border:1px solid var(--line);
-      border-radius:var(--radius);
-      background:linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.06));
-      box-shadow:var(--shadow);
-    }
-    .glass{
-      background:rgba(255,255,255,.06);
-      backdrop-filter:saturate(140%) blur(12px);
-      border:1px solid rgba(255,255,255,.10);
-    }
-    input,select,textarea{
-      font:inherit;
-      color:var(--text);
-      background:rgba(255,255,255,.06);
-      border:1px solid var(--line);
-      border-radius:14px;
-      padding:12px 12px;
-      outline:none;
-    }
-    input::placeholder{color:var(--muted2)}
-    select{padding-right:34px}
-    .row{display:flex; gap:10px; align-items:center}
-    .grow{flex:1}
-    .muted{color:var(--muted)}
-    .muted2{color:var(--muted2)}
-    .title{font-weight:900; letter-spacing:.2px}
-    .kpi{
-      border:1px solid var(--line);
-      background:rgba(0,0,0,.18);
-      border-radius:14px;
-      padding:10px 12px;
-      display:flex;
-      gap:10px;
-      align-items:baseline;
-    }
-    .kpi b{font-size:20px}
-    .layout{
-      min-height:100vh;
-      display:grid;
-      grid-template-rows:auto 1fr auto;
-    }
-    header.topbar{
-      position:sticky; top:0; z-index:40;
-      padding:12px 0;
-    }
-    .topbar .inner{
-      display:flex; align-items:center; gap:12px;
-    }
-    .logo{
-      display:flex; align-items:center; gap:10px;
-      font-weight:900;
-    }
-    .badge{
-      border:1px solid var(--line);
-      border-radius:999px;
-      padding:6px 10px;
-      font-size:12px;
-      color:var(--muted);
-      background:rgba(255,255,255,.05);
-    }
-    .grid{
-      display:grid;
-      gap:14px;
-      grid-template-columns:1fr;
-    }
-    @media(min-width:980px){
-      .grid{grid-template-columns:1fr 1fr}
-    }
-    .section-head{
-      display:flex; align-items:center; gap:10px;
-      margin:6px 0 10px;
-    }
-    .section-head h2{margin:0; font-size:16px}
-    .section-head .spacer{flex:1}
-    .toggle{
-      display:flex; align-items:center; gap:8px;
-      padding:10px 12px;
-      border-radius:14px;
-      border:1px solid var(--line);
-      background:rgba(255,255,255,.05);
-      cursor:pointer;
-      user-select:none;
-    }
-    .list{display:grid; gap:12px}
-    .item-card{
-      border:1px solid var(--line);
-      background:rgba(255,255,255,.06);
-      border-radius:18px;
-      padding:12px;
-    }
-    .item-top{display:flex; gap:10px; align-items:flex-start}
-    .item-name{font-weight:900}
-    .item-meta{font-size:12px; color:var(--muted)}
-    .pill{font-size:12px; padding:4px 8px; border-radius:999px; border:1px solid var(--line); color:var(--muted); background:rgba(255,255,255,.04)}
-    .qty-wrap{display:flex; gap:10px; align-items:center; margin-top:10px}
-    .qty-btn{width:var(--tap); padding:0; font-size:20px; font-weight:900}
-    .qty-input{width:90px; text-align:center; font-size:18px; font-weight:900}
-    .small-btn{min-height:40px; border-radius:12px}
-    .footerbar{
-      position:sticky;
-      bottom:0;
-      z-index:50;
-      border-top:1px solid rgba(255,255,255,.12);
-      padding:12px 0;
-    }
-    .toast{
-      position:fixed;
-      left:50%;
-      bottom:18px;
-      transform:translateX(-50%);
-      background:rgba(0,0,0,.55);
-      border:1px solid rgba(255,255,255,.14);
-      backdrop-filter: blur(12px);
-      padding:10px 14px;
-      border-radius:999px;
-      color:#fff;
-      z-index:80;
-      display:none;
-      max-width:min(680px, 92vw);
-    }
-    .toast.show{display:block}
-    /* modal */
-    dialog{
-      border:none;
-      border-radius:20px;
-      padding:0;
-      width:min(860px, 94vw);
-      color:var(--text);
-      background:linear-gradient(180deg, rgba(15,23,42,.98), rgba(2,6,23,.96));
-      border:1px solid rgba(255,255,255,.14);
-      box-shadow:0 30px 90px rgba(0,0,0,.55);
-    }
-    dialog::backdrop{background:rgba(0,0,0,.55)}
-    .modal-head{padding:14px 14px; border-bottom:1px solid rgba(255,255,255,.12); display:flex; gap:10px; align-items:center}
-    .modal-body{padding:14px}
-    .table{width:100%; border-collapse:collapse; font-size:13px}
-    .table th,.table td{padding:10px 8px; border-bottom:1px solid rgba(255,255,255,.10); vertical-align:top}
-    .table th{color:var(--muted); font-weight:800; text-align:left}
-    .right{text-align:right}
-    .mono{font-family:var(--mono)}
-    .hint{font-size:12px; color:var(--muted2)}
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<title>Phoenix Pull</title>
+<meta name="theme-color" content="#1456d9" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+:root{
+  --bg:#eef1f5; --surface:#fff; --ink:#151a23; --muted:#5b6574; --line:#d9dee6;
+  --accent:#1456d9; --accent-ink:#fff; --flag:#c2410c; --flag-bg:#ffedd5; --danger:#b42318;
+  --sans:"Figtree",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media(prefers-color-scheme:dark){:root{
+  --bg:#0e1116; --surface:#171b22; --ink:#eceff4; --muted:#98a2b3; --line:#2a313c;
+  --accent:#6b9bff; --accent-ink:#0b1220; --flag:#fdba74; --flag-bg:#3a2210; --danger:#fda29b;
+}}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;font-family:var(--sans);background:var(--bg);color:var(--ink);font-size:15px;line-height:1.4;overflow-x:hidden;-webkit-text-size-adjust:100%}
+.hidden{display:none!important}
+.row{display:flex;align-items:center;gap:10px}
+.spacer{flex:1}.grow{flex:1;min-width:0}
+.muted{color:var(--muted)}.muted2{color:var(--muted);font-size:12px}
+.right{text-align:right}.mono{font-family:var(--mono)}
+.hint{font-size:13px;color:var(--muted)}
+.title{font-weight:800;letter-spacing:-.01em}
+.wrap{max-width:1180px;margin:0 auto;padding:0 max(14px,env(safe-area-inset-left)) 0 max(14px,env(safe-area-inset-right))}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
-    /* ---------- Phoenix Pull v5 visual refresh ---------- */
-    :root{
-      --bg:#070b12; --bg2:#0b1220; --card:rgba(15,23,42,.78); --card2:rgba(30,41,59,.78);
-      --line:rgba(148,163,184,.18); --text:#f8fafc; --muted:#a8b3c2; --muted2:#718096;
-      --brand:#38bdf8; --brand2:#818cf8; --ok:#34d399; --warn:#f59e0b; --danger:#fb7185;
-      --shadow:0 24px 70px rgba(0,0,0,.34); --radius:20px; --tap:50px;
-    }
-    body{background:radial-gradient(circle at 10% 0%,rgba(56,189,248,.10),transparent 30%),radial-gradient(circle at 90% 10%,rgba(129,140,248,.10),transparent 28%),var(--bg);}
-    .topbar{background:rgba(7,11,18,.78)!important;backdrop-filter:blur(20px) saturate(160%);border-bottom:1px solid rgba(148,163,184,.12)}
-    .logo .title{letter-spacing:-.02em}
-    .card{background:linear-gradient(145deg,rgba(15,23,42,.82),rgba(15,23,42,.58));box-shadow:var(--shadow);border-color:rgba(148,163,184,.16)}
-    .item-card{background:linear-gradient(145deg,rgba(15,23,42,.72),rgba(30,41,59,.55));transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease}
-    .item-card:hover{transform:translateY(-1px);border-color:rgba(56,189,248,.32);box-shadow:0 12px 30px rgba(0,0,0,.22)}
-    .btn{background:rgba(255,255,255,.055);border-color:rgba(148,163,184,.18);font-weight:700}
-    .btn:hover{filter:brightness(1.12);border-color:rgba(56,189,248,.35)}
-    .btn.primary{background:linear-gradient(135deg,#38bdf8,#6366f1);color:#fff;box-shadow:0 12px 30px rgba(56,189,248,.20)}
-    .btn.danger{background:rgba(251,113,133,.10);border-color:rgba(251,113,133,.28)}
-    input,select,textarea{background:rgba(15,23,42,.72);border-color:rgba(148,163,184,.18)}
-    input:focus,select:focus,textarea:focus{border-color:rgba(56,189,248,.55);box-shadow:0 0 0 3px rgba(56,189,248,.10)}
-    .chip.active{background:linear-gradient(135deg,rgba(56,189,248,.22),rgba(129,140,248,.20));border-color:rgba(56,189,248,.35)}
-    .kpi{background:rgba(15,23,42,.72);border-color:rgba(148,163,184,.16)}
-    .section-head h2{font-size:18px;letter-spacing:-.02em}
-    .section-head .pill{background:rgba(56,189,248,.08);border-color:rgba(56,189,248,.18)}
-    .restock{accent-color:#f59e0b}
-    .qty-input{background:rgba(2,6,23,.72);border-color:rgba(56,189,248,.22)}
-    .footerbar{background:rgba(7,11,18,.82)!important;backdrop-filter:blur(18px);border-top-color:rgba(148,163,184,.16)}
-    dialog{background:linear-gradient(180deg,rgba(15,23,42,.99),rgba(7,11,18,.99));max-height:90vh;overflow:hidden}
-    dialog .modal-body{overflow:auto;max-height:calc(90vh - 70px)}
-    .sheet-hero{display:flex;justify-content:space-between;gap:18px;align-items:center;padding:18px;border:1px solid rgba(56,189,248,.18);border-radius:18px;background:linear-gradient(135deg,rgba(56,189,248,.09),rgba(129,140,248,.08));margin-bottom:18px}
-    .sheet-kicker,.sheet-group-label{font-size:11px;font-weight:900;letter-spacing:.14em;color:#7dd3fc}
-    .sheet-hero-title{font-size:42px;line-height:1;font-weight:950;letter-spacing:-.04em;margin-top:6px}.sheet-hero-title span{font-size:14px;color:var(--muted);letter-spacing:0}.sheet-hero-sub{font-size:12px;color:var(--muted);margin-top:7px}
-    .sticker-grid{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}.sticker-card{min-width:132px;padding:12px;border-radius:14px;border:1px solid rgba(148,163,184,.18);background:rgba(2,6,23,.36)}.sticker-card b{display:block;font-size:25px;margin:2px 0}.sticker-card span:last-child{font-size:11px;color:var(--muted)}.sticker-days{font-size:10px;font-weight:900;color:var(--muted)}.sticker-2{border-color:rgba(56,189,248,.28)}.sticker-3{border-color:rgba(129,140,248,.28)}
-    .sheet-group-label{margin:18px 2px 8px}.sheet-section{border:1px solid rgba(148,163,184,.16);border-radius:16px;overflow:hidden;margin-bottom:12px;background:rgba(15,23,42,.46)}.sheet-section-head{display:flex;justify-content:space-between;align-items:center;padding:13px 15px;background:rgba(255,255,255,.035)}.sheet-section-title{font-size:16px;font-weight:900}.sheet-section-sub{font-size:11px;color:var(--muted2);margin-top:3px}.sheet-table{margin:0}.sheet-table th{font-size:10px;letter-spacing:.08em}.sheet-table td{padding:11px 10px}.sheet-restock-header{display:flex;justify-content:space-between;align-items:end;margin:22px 2px 8px}.sheet-restock-note{font-size:11px;color:var(--muted2)}.sheet-restock-total{font-weight:900;color:#fbbf24}.sheet-restock-section{border-color:rgba(245,158,11,.24)}.sheet-restock-section .sheet-section-head{background:rgba(245,158,11,.07)}.sheet-restock-badge{font-size:10px;font-weight:900;color:#fbbf24;border:1px solid rgba(245,158,11,.25);padding:5px 8px;border-radius:999px}.restock-mark{font-size:11px;color:#fbbf24;font-weight:900}.sheet-empty{padding:20px;border:1px dashed rgba(148,163,184,.25);border-radius:14px;color:var(--muted)}
-    @media(max-width:700px){.sheet-hero{display:block}.sticker-grid{justify-content:flex-start;margin-top:16px}.sticker-card{flex:1;min-width:110px}.sheet-table th,.sheet-table td{padding:9px 7px}.footerbar .inner{display:grid;grid-template-columns:1fr 1fr}.footerbar .spacer{display:none}.footerbar .badge{grid-column:1/-1;text-align:center}.item-top{flex-direction:column}.item-top>.row{width:100%;justify-content:space-between}}
-    @media print{body *{visibility:hidden!important}#sheetDlg,#sheetDlg *{visibility:visible!important}#sheetDlg{position:static!important;inset:auto!important;width:auto!important;max-width:none!important;border:0!important;box-shadow:none!important;background:#fff!important;color:#111!important}#sheetDlg::backdrop{display:none}.modal-head{display:none!important}.modal-body{max-height:none!important;overflow:visible!important}.sheet-hero{background:#f5f7fa!important;border-color:#ddd!important}.sheet-section{break-inside:avoid;background:#fff!important;border-color:#ddd!important}.sheet-section-head{background:#f5f5f5!important}.sheet-restock-section .sheet-section-head{background:#fff7ed!important}.sheet-table th,.sheet-table td{color:#111!important;border-color:#e5e7eb!important}.sheet-table th,.sheet-section-sub,.sheet-hero-sub,.sheet-restock-note{color:#666!important}.sheet-restock-badge,.sheet-restock-total,.restock-mark{color:#9a6700!important}.sticker-card{background:#fff!important;border-color:#ddd!important}.sticker-card span:last-child,.sticker-days{color:#666!important}}
-  .qty-unset{font-size:12px;font-weight:700;color:var(--muted,#8b95a7);font-style:italic}.sheet-restock-total{white-space:nowrap}</style>
+/* controls */
+.btn{min-height:44px;padding:0 16px;border-radius:12px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font:inherit;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;touch-action:manipulation}
+.btn:active{transform:scale(.98)}
+.btn:disabled{opacity:.4;cursor:default}
+.btn.small-btn{min-height:36px;padding:0 12px;font-size:14px}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.danger{color:var(--danger);border-color:currentColor;background:transparent}
+.btn.ghost{background:transparent;border-color:transparent;color:var(--muted)}
+input,select,textarea{font:inherit;font-size:16px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:0 12px;min-height:44px;max-width:100%}
+textarea{padding:10px 12px;width:100%}
+input::placeholder,textarea::placeholder{color:var(--muted);opacity:.8}
+input[type=checkbox]{min-height:0;width:18px;height:18px;padding:0;accent-color:var(--accent)}
+.toggle{display:flex;align-items:center;gap:8px}
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="config.js"></script>
-  <script defer src="app.js"></script>
+/* top bar + sticky toolbar */
+.topbar{display:flex;align-items:center;gap:10px;padding:12px 0 8px}
+.brand{font-weight:800;font-size:18px;letter-spacing:-.02em;display:flex;align-items:center;gap:8px}
+.brand i{width:12px;height:12px;border-radius:4px;background:var(--accent);display:block;transform:rotate(45deg)}
+.who{margin-left:auto;color:var(--muted);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.save{font-size:12px;color:var(--muted);white-space:nowrap}
+.toolbar{position:sticky;top:0;z-index:30;background:var(--bg);padding:8px 0 10px;border-bottom:1px solid var(--line)}
+.toolbar .row+.row{margin-top:8px}
+.seg{display:flex;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:3px}
+.seg button{border:0;background:transparent;color:var(--muted);font:inherit;font-weight:600;font-size:14px;min-height:36px;padding:0 12px;border-radius:9px;cursor:pointer}
+.seg button[aria-pressed=true]{background:var(--ink);color:var(--bg)}
+body[data-mode=find] #quickAdd,body[data-mode=add] #search{display:none}
+.total{display:flex;align-items:baseline;gap:6px;color:var(--muted);font-size:13px;white-space:nowrap}
+.total b{font-size:22px;color:var(--ink);font-variant-numeric:tabular-nums}
+.chips{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding:2px 0;-webkit-overflow-scrolling:touch}
+.chips::-webkit-scrollbar{display:none}
+#categoryChips{display:contents}
+.chip{min-height:36px;padding:0 14px;border-radius:999px;border:1px solid var(--line);background:var(--surface);font:inherit;font-size:14px;font-weight:600;color:var(--ink);white-space:nowrap;cursor:pointer;display:inline-flex;align-items:center;gap:6px;flex:none}
+.chip.active,.chip:has(input:checked){background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.chip input{position:absolute;opacity:0;pointer-events:none}
+.sep{width:1px;background:var(--line);flex:none;margin:4px 2px}
+
+/* sections + items */
+#sections{display:grid;gap:14px;grid-template-columns:1fr;align-items:start;padding:14px 0 120px}
+@media(min-width:960px){#sections{grid-template-columns:1fr 1fr}}
+.sec,.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.sec-head{width:100%;display:flex;align-items:center;gap:10px;padding:12px 14px;background:transparent;border:0;color:var(--ink);font:inherit;font-weight:800;cursor:pointer;text-align:left}
+.sec-total{margin-left:auto;color:var(--muted);font-weight:600;font-variant-numeric:tabular-nums}
+.chev{transition:transform .15s;color:var(--muted)}
+.is-collapsed .chev{transform:rotate(-90deg)}
+.is-collapsed .list{display:none}
+.item-card{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:12px 14px;border-top:1px solid var(--line)}
+.item-info{flex:1 1 100%;min-width:0}
+@media(min-width:640px){.item-info{flex:1 1 0}}
+.item-name{font-weight:700;overflow-wrap:anywhere}
+.item-meta{font-size:12px;color:var(--muted)}
+.item-controls{display:flex;align-items:center;gap:8px;margin-left:auto}
+.par-btn{min-height:36px;padding:0 10px;border-radius:10px;border:1px dashed var(--line);background:transparent;color:var(--muted);font:inherit;font-size:13px;font-weight:600;cursor:pointer;font-variant-numeric:tabular-nums}
+.par-btn:disabled{opacity:.45;cursor:default}
+.flag{min-height:36px;padding:0 10px;border-radius:10px;border:1px solid var(--line);color:var(--muted);font-size:13px;font-weight:600;display:inline-flex;align-items:center;cursor:pointer;position:relative}
+.flag input{position:absolute;opacity:0;pointer-events:none}
+.flag:has(input:checked){background:var(--flag-bg);border-color:var(--flag);color:var(--flag)}
+.flag:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:2px}
+.stepper{display:flex;align-items:center;background:var(--bg);border:1px solid var(--line);border-radius:12px}
+.step{width:44px;height:44px;border:0;background:transparent;color:var(--ink);font-size:22px;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;border-radius:12px}
+.step:active{background:var(--line)}
+.qty-input{width:52px;min-height:44px;height:44px;text-align:center;border:0;background:transparent;font-size:18px;font-weight:800;padding:0;font-variant-numeric:tabular-nums;-moz-appearance:textfield}
+.qty-input::-webkit-outer-spin-button,.qty-input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.empty{padding:28px 16px;text-align:center;color:var(--muted)}
+
+/* bottom dock */
+.dock{position:fixed;left:0;right:0;bottom:0;z-index:40;background:var(--surface);border-top:1px solid var(--line);padding:10px 0 max(10px,env(safe-area-inset-bottom))}
+.dock .wrap{display:flex;gap:10px;align-items:center}
+.menu{position:absolute;right:max(14px,env(safe-area-inset-right));bottom:calc(100% + 8px);background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.25);padding:6px;min-width:230px}
+.menu .btn{width:100%;justify-content:flex-start;border:0;background:transparent}
+.toast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:999px;z-index:80;display:none;max-width:min(560px,92vw);font-weight:600;font-size:14px}
+.toast.show{display:block}
+
+/* dialogs */
+dialog{border:0;padding:0;border-radius:16px;width:min(760px,calc(100vw - 24px));max-height:min(88dvh,760px);color:var(--ink);background:var(--surface);box-shadow:0 24px 80px rgba(0,0,0,.35);overflow:hidden}
+dialog[open]{display:flex;flex-direction:column}
+dialog::backdrop{background:rgba(0,0,0,.5)}
+.modal-head{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:center;flex:none}
+.modal-body{padding:16px;overflow:auto;flex:1;min-height:0}
+@media(max-width:600px){dialog{width:100vw;max-width:100vw;max-height:92dvh;margin:auto 0 0;border-radius:16px 16px 0 0}}
+.badge{font-size:12px;padding:3px 10px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+.scroll{overflow-x:auto}
+.table{width:100%;border-collapse:collapse;font-size:13px;min-width:480px}
+.table th,.table td{padding:10px;border-bottom:1px solid var(--line);vertical-align:top;text-align:left}
+.table th{color:var(--muted);font-weight:700}
+.table .right{text-align:right}
+.tabs{display:flex;gap:6px;margin-bottom:14px}
+.tabs button{min-height:36px;padding:0 14px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--ink);font:inherit;font-weight:600;cursor:pointer}
+.tabs button[aria-selected=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.form{display:grid;gap:12px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:520px){.two{grid-template-columns:1fr}}
+.tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+
+/* login */
+#view-login{min-height:100dvh;display:grid;place-items:center;padding:20px 14px}
+.login{width:min(420px,100%)}
+.login .card{padding:22px}
+.login h1{font-size:26px;margin:14px 0 4px;letter-spacing:-.02em}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<script defer src="app.js"></script>
 </head>
-<body>
-  <!-- LOGIN -->
-  <section id="view-login" class="layout">
-    <header class="topbar safe-x">
-      <div class="inner">
-        <div class="logo">
-          <span style="font-size:18px">🔥</span>
-          <span class="title">Phoenix Pull</span>
-        </div>
-        <span class="badge">v4 • fresh build</span>
+<body data-mode="find">
+
+<!-- LOGIN -->
+<section id="view-login">
+  <div class="login">
+    <div class="brand"><i></i>Phoenix Pull</div>
+    <div class="card">
+      <h1 class="title">Sign in</h1>
+      <div class="muted">Start your pull list for the shift.</div>
+      <form id="loginForm" class="form" style="margin-top:18px">
+        <input id="loginEmail" type="email" placeholder="Email" autocomplete="username" required />
+        <input id="loginPass" type="password" placeholder="Password (leave blank for an email link)" autocomplete="current-password" />
+        <button class="btn primary" type="submit">Sign in</button>
+        <button id="magicLinkBtn" class="btn" type="button">Email me a sign-in link</button>
+      </form>
+      <div class="row" style="margin-top:14px;justify-content:space-between;flex-wrap:wrap">
+        <button id="openSignup" class="btn ghost small-btn" type="button">Create account</button>
+        <button id="resetPw" class="btn ghost small-btn" type="button">Reset password</button>
       </div>
-    </header>
+      <div id="loginMsg" class="hint" role="status" style="margin-top:8px"></div>
+    </div>
+  </div>
 
-    <main class="safe-x" style="display:grid;place-items:center;padding:18px 0 30px">
-      <div class="card" style="width:min(520px, 96vw); padding:16px">
-        <div class="row" style="justify-content:space-between; align-items:flex-start">
-          <div>
-            <div class="title" style="font-size:22px">Sign in</div>
-            <div class="muted" style="margin-top:4px">Fast pulls, clean totals, admin item management.</div>
-          </div>
-          <div class="pill">Supabase</div>
+  <dialog id="signupDlg">
+    <div class="modal-head"><div class="title">Create account</div><div class="spacer"></div><button class="btn small-btn" id="closeSignup" type="button">Close</button></div>
+    <div class="modal-body">
+      <form id="signupForm" class="form">
+        <input id="signupName" type="text" placeholder="Display name (optional)" />
+        <input id="signupEmail" type="email" placeholder="Email" required />
+        <input id="signupPass" type="password" placeholder="Password" autocomplete="new-password" required />
+        <button class="btn primary" type="submit">Create account</button>
+      </form>
+    </div>
+  </dialog>
+</section>
+
+<!-- APP -->
+<section id="view-app" class="hidden">
+  <div class="wrap">
+    <div class="topbar">
+      <div class="brand"><i></i>Pull list</div>
+      <span class="save" id="saveState">Ready</span>
+      <div class="who" id="whoBadge">…</div>
+      <button id="adminOpen" class="btn small-btn" type="button">Admin</button>
+      <button id="logoutBtn" class="btn small-btn" type="button">Log out</button>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <div class="wrap">
+      <div class="row">
+        <div class="seg" role="group" aria-label="Mode">
+          <button type="button" data-mode-btn="find" aria-pressed="true">Find</button>
+          <button type="button" data-mode-btn="add" aria-pressed="false">Add</button>
         </div>
-
-        <form id="loginForm" class="grid" style="margin-top:14px">
-          <input id="loginEmail" type="email" placeholder="email@domain.com" required />
-          <input id="loginPass" type="password" placeholder="password (leave blank for magic link)" />
-          <div class="row" style="gap:10px">
-            <button class="btn primary grow" type="submit">Sign in</button>
-            <button id="magicLinkBtn" class="btn grow" type="button">Send magic link</button>
-          </div>
-        </form>
-
-        <div class="row" style="margin-top:10px; justify-content:space-between; flex-wrap:wrap">
-          <button id="openSignup" class="btn ghost small-btn">Create account</button>
-          <button id="resetPw" class="btn ghost small-btn">Reset password</button>
-        </div>
-
-        <div id="loginMsg" class="hint" style="margin-top:10px"></div>
+        <input id="search" class="grow" type="search" placeholder="Search items" autocomplete="off" />
+        <input id="quickAdd" class="grow" type="text" placeholder="2 croissant, muffin x3, then Enter" autocomplete="off" enterkeyhint="done" />
+        <div class="total"><span>Total</span><b id="totalAll">0</b></div>
       </div>
-    </main>
-
-    <footer class="safe-x muted2" style="padding:14px 0 18px">
-      Tip: Use <b>Quick Add</b> in the app: type “2 croissant” and hit Enter.
-    </footer>
-
-    <dialog id="signupDlg">
-      <div class="modal-head">
-        <div class="title">Create account</div>
-        <div class="spacer"></div>
-        <button class="btn small-btn" id="closeSignup">Close</button>
-      </div>
-      <div class="modal-body">
-        <form id="signupForm" class="grid" style="grid-template-columns:1fr; gap:12px">
-          <input id="signupName" type="text" placeholder="Display name (optional)" />
-          <input id="signupEmail" type="email" placeholder="Email" required />
-          <input id="signupPass" type="password" placeholder="Password" required />
-          <button class="btn primary" type="submit">Create</button>
-        </form>
-        <div class="hint" style="margin-top:10px">Accounts are stored in Supabase Auth. Your profile row is created automatically.</div>
-      </div>
-    </dialog>
-  </section>
-
-  <!-- APP -->
-  <section id="view-app" class="hidden layout">
-    <header class="topbar safe-x glass">
-      <div class="inner">
-        <div class="logo">
-          <span style="font-size:18px">✅</span>
-          <span class="title">Pull List</span>
-        </div>
-        <div class="badge" id="whoBadge">…</div>
-        <div style="margin-left:auto" class="row">
-          <button id="adminOpen" class="btn small-btn">Admin</button>
-          <button id="logoutBtn" class="btn small-btn">Log out</button>
+      <div class="row">
+        <div class="chips">
+          <div id="categoryChips"></div>
+          <span class="sep"></span>
+          <label class="chip"><input id="onlyQty" type="checkbox" />Has qty</label>
+          <label class="chip"><input id="onlyRestock" type="checkbox" />Restock</label>
         </div>
       </div>
+    </div>
+  </div>
 
-      <div class="inner" style="margin-top:10px; gap:10px; flex-wrap:wrap">
-        <input id="quickAdd" class="grow" type="text" placeholder="Quick add: “2 croissant”, “butter muffin x3”… Enter to add" autocomplete="off"/>
-        <input id="search" class="grow" type="search" placeholder="Search…" autocomplete="off"/>
-        <label class="toggle">
-          <input id="onlyQty" type="checkbox" />
-          <span class="muted">Only qty</span>
-        </label>
-        <label class="toggle">
-          <input id="onlyRestock" type="checkbox" />
-          <span class="muted">Restock only</span>
-        </label>
+  <main class="wrap"><div id="sections"></div></main>
+
+  <div class="dock">
+    <div class="wrap" style="position:relative">
+      <button id="undoBtn" class="btn" type="button" aria-label="Undo">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>Undo
+      </button>
+      <button id="pullSheetBtn" class="btn primary grow" type="button">Pull sheet</button>
+      <button id="moreBtn" class="btn" type="button" aria-label="More actions">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>
+      </button>
+      <div id="moreMenu" class="menu hidden">
+        <button id="setVisibleToPar" class="btn" type="button">Set visible items to PAR</button>
+        <button id="resetShift" class="btn danger" type="button">Start fresh shift</button>
+      </div>
+    </div>
+  </div>
+
+  <dialog id="sheetDlg">
+    <div class="modal-head"><div class="title">Pull sheet</div><div class="spacer"></div>
+      <button class="btn small-btn" id="copySheet" type="button">Copy</button>
+      <button class="btn small-btn" id="closeSheet" type="button">Close</button></div>
+    <div class="modal-body">
+      <div class="hint">Items with a quantity above 0, grouped by category.</div>
+      <div id="sheetBody" style="margin-top:12px"></div>
+    </div>
+  </dialog>
+
+  <dialog id="adminDlg">
+    <div class="modal-head"><div class="title">Admin</div><span class="badge" id="roleBadge">role: ?</span><div class="spacer"></div>
+      <button class="btn small-btn" id="closeAdmin" type="button">Close</button></div>
+    <div class="modal-body">
+      <div class="tabs" role="tablist">
+        <button type="button" data-tab="items" aria-selected="true">Items</button>
+        <button type="button" data-tab="users" aria-selected="false">Users</button>
+        <button type="button" data-tab="logs" aria-selected="false">Logs</button>
       </div>
 
-      <div class="inner" style="margin-top:10px">
-        <div id="categoryChips" class="row" style="gap:10px; overflow:auto; padding-bottom:4px"></div>
-        <div class="spacer"></div>
-        <div class="kpi"><span class="muted">Total</span> <b id="totalAll">0</b></div>
-      </div>
-    </header>
+      <section id="tab-items">
+        <div class="tools"><div class="spacer"></div><button id="addItemBtn" class="btn primary small-btn" type="button">Add item</button></div>
+        <div id="itemsTableWrap" class="card scroll"></div>
+        <div class="hint" style="margin-top:8px">Deactivate an item to hide it without deleting its history.</div>
+      </section>
 
-    <main class="safe-x" style="padding:14px 0 80px">
-      <div id="sections" class="grid"></div>
-    </main>
+      <section id="tab-users" class="hidden"><div id="usersTableWrap" class="card scroll"></div></section>
 
-    <footer class="footerbar safe-x glass safe-b">
-      <div class="inner" style="gap:10px; flex-wrap:wrap">
-        <button id="pullSheetBtn" class="btn primary">Pull Sheet</button>
-        <button id="setVisibleToPar" class="btn">Set visible → PAR</button>
-        <button id="undoBtn" class="btn">Undo</button>
-        <button id="resetShift" class="btn danger">Start fresh shift</button>
-        <div class="spacer"></div>
-        <span class="badge" id="saveState">Ready</span>
-      </div>
-    </footer>
-
-    <dialog id="sheetDlg">
-      <div class="modal-head">
-        <div class="title">Pull Sheet</div>
-        <div class="spacer"></div>
-        <button class="btn small-btn" id="copySheet">Copy</button>
-        <button class="btn primary small-btn" id="printSheet" type="button">Print</button>
-        <button class="btn small-btn" id="closeSheet">Close</button>
-      </div>
-      <div class="modal-body">
-        <div class="hint">Only items with qty &gt; 0 are shown. Grouped by category.</div>
-        <div id="sheetBody" style="margin-top:10px"></div>
-      </div>
-    </dialog>
-
-    <dialog id="adminDlg">
-      <div class="modal-head">
-        <div class="title">Admin</div>
-        <div class="badge" id="roleBadge">role: ?</div>
-        <div class="spacer"></div>
-        <button class="btn small-btn" id="closeAdmin">Close</button>
-      </div>
-      <div class="modal-body">
-        <div class="row" style="flex-wrap:wrap; margin-bottom:12px">
-          <button class="btn small-btn" data-tab="items">Items</button>
-          <button class="btn small-btn" data-tab="users">Users</button>
-          <button class="btn small-btn" data-tab="logs">Logs</button>
+      <section id="tab-logs" class="hidden">
+        <div class="tools">
+          <select id="logUserFilter"></select>
+          <select id="logActionFilter">
+            <option value="all">All actions</option>
+            <option value="qty_change">Quantity changed</option>
+            <option value="restock_toggle">Restock toggled</option>
+            <option value="set_par">Set to PAR</option>
+            <option value="pull_sheet_open">Pull sheet opened</option>
+            <option value="login">Login</option>
+            <option value="logout">Logout</option>
+          </select>
+          <div class="spacer"></div>
+          <button id="exportCSV" class="btn small-btn" type="button">Export CSV</button>
+          <button id="clearLogs" class="btn danger small-btn" type="button">Clear logs</button>
         </div>
+        <div id="logsTableWrap" class="card scroll"></div>
+      </section>
+    </div>
+  </dialog>
 
-        <section id="tab-items">
-          <div class="row" style="flex-wrap:wrap; margin-bottom:10px">
-            <div class="title">Items</div>
-            <div class="spacer"></div>
-            <button id="addItemBtn" class="btn primary small-btn">Add item</button>
-          </div>
-          <div id="itemsTableWrap" class="card" style="padding:10px; background:rgba(255,255,255,.04)"></div>
-          <div class="hint" style="margin-top:8px">Deactivate hides items without deleting history.</div>
-        </section>
+  <dialog id="itemEditDlg">
+    <div class="modal-head"><div class="title" id="itemEditTitle">Item</div><div class="spacer"></div>
+      <button class="btn small-btn" id="closeItemEdit" type="button">Close</button></div>
+    <div class="modal-body">
+      <form id="itemEditForm" class="form">
+        <input type="hidden" id="itemId" />
+        <div class="two">
+          <input id="itemCategory" placeholder="Category (e.g. Pastries)" required />
+          <input id="itemName" placeholder="Item name" required />
+        </div>
+        <div class="two">
+          <input id="itemPar" type="number" min="0" placeholder="PAR (optional)" />
+          <input id="itemShelf" placeholder="Shelf (optional)" />
+        </div>
+        <textarea id="itemNote" placeholder="Note (optional), e.g. 6–8 depending on day" rows="3"></textarea>
+        <label class="toggle"><input id="itemActive" type="checkbox" checked /><span>Active</span></label>
+        <div class="row" style="justify-content:flex-end">
+          <button id="deleteItemBtn" class="btn danger" type="button">Delete</button>
+          <button class="btn primary" type="submit">Save item</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+</section>
 
-        <section id="tab-users" class="hidden">
-          <div class="row" style="flex-wrap:wrap; margin-bottom:10px">
-            <div>
-              <div class="title">Users</div>
-              <div class="hint">Create new team accounts, change roles, or deactivate access.</div>
-            </div>
-            <div class="spacer"></div>
-            <button id="createUserBtn" class="btn primary small-btn">+ Create user</button>
-          </div>
-          <div id="usersTableWrap" class="card" style="padding:10px; background:rgba(255,255,255,.04)"></div>
-          <div class="hint" style="margin-top:8px">New users receive an email invitation and can set their own password.</div>
-        </section>
-
-        <section id="tab-logs" class="hidden">
-          <div class="row" style="flex-wrap:wrap; margin-bottom:10px">
-            <div class="title">Interactions</div>
-            <div class="spacer"></div>
-            <select id="logUserFilter"></select>
-            <select id="logActionFilter">
-              <option value="all">All actions</option>
-              <option value="qty_change">Qty changed</option>
-              <option value="restock_toggle">Restock toggled</option>
-              <option value="set_par">Set PAR</option>
-              <option value="pull_sheet_open">Pull sheet opened</option>
-              <option value="login">Login</option>
-              <option value="logout">Logout</option>
-            </select>
-            <button id="exportCSV" class="btn small-btn">Export CSV</button>
-            <button id="clearLogs" class="btn danger small-btn">Clear</button>
-          </div>
-          <div id="logsTableWrap" class="card" style="padding:10px; background:rgba(255,255,255,.04)"></div>
-        </section>
-      </div>
-    </dialog>
-
-    <dialog id="itemEditDlg">
-      <div class="modal-head">
-        <div class="title" id="itemEditTitle">Item</div>
-        <div class="spacer"></div>
-        <button class="btn small-btn" id="closeItemEdit">Close</button>
-      </div>
-      <div class="modal-body">
-        <form id="itemEditForm" class="grid" style="gap:12px">
-          <input type="hidden" id="itemId" />
-          <div class="row" style="gap:12px; flex-wrap:wrap">
-            <input id="itemCategory" class="grow" placeholder="Category (e.g. Pastries)" required />
-            <input id="itemName" class="grow" placeholder="Item name" required />
-          </div>
-          <div class="row" style="gap:12px; flex-wrap:wrap">
-            <input id="itemPar" class="grow" type="number" min="0" placeholder="PAR (optional)" />
-            <input id="itemShelf" class="grow" placeholder="Shelf (optional)" />
-          </div>
-          <textarea id="itemNote" placeholder="Note (optional) — e.g. “6–8 depending on day”" rows="3"></textarea>
-          <label class="toggle" style="justify-content:flex-start">
-            <input id="itemActive" type="checkbox" checked />
-            <span class="muted">Active</span>
-          </label>
-          <div class="row" style="justify-content:flex-end; flex-wrap:wrap">
-            <button id="deleteItemBtn" class="btn danger small-btn" type="button">Delete</button>
-            <button class="btn primary" type="submit">Save</button>
-          </div>
-        </form>
-      </div>
-    </dialog>
-  </section>
-
-  <div id="toast" class="toast"></div>
+<div id="toast" class="toast" role="status"></div>
 </body>
 </html>
