@@ -51,6 +51,37 @@ function setSaveState(s){
 
 function keyFor(category, name){ return `${category}__${name}`; }
 
+// Cake pops and egg bites always get their own sections, even if they are still filed under Pastries / Sandwiches
+function effCat(cat, name){
+  const n = String(name || '').toLowerCase();
+  const c = String(cat || '').toLowerCase().replace(/[^a-z]/g, '');
+  if(/cake\s*-?pop/.test(n) || c.includes('cakepop')) return 'Cake Pops';
+  if(/egg\s*-?bite/.test(n) || c.includes('eggbite')) return 'Egg Bites';
+  return cat;
+}
+// Top sections first: Pastries, Sandwiches, Cake Pops, Egg Bites, then everything else A-Z
+function catRank(c){
+  const n = String(c).toLowerCase().replace(/[^a-z]/g, '');
+  if(/^paste?r/.test(n)) return 0;
+  if(n.startsWith('sandw')) return 1;
+  if(n.includes('cakepop')) return 2;
+  if(n.includes('eggbite')) return 3;
+  return 4;
+}
+function sortCats(a, b){ return catRank(a) - catRank(b) || String(a).localeCompare(String(b)); }
+
+// Shelf life in days: Pastries 2, Sandwiches 3, Cake Pops 3, Egg Bites 7 (otherwise the item's own shelf field)
+function shelfDays(it){
+  const n = String(it.name || '').toLowerCase();
+  const c = String(it.category || '').toLowerCase().replace(/[^a-z]/g, '');
+  if(/cake\s*-?pop/.test(n) || c.includes('cakepop')) return 3;
+  if(/egg\s*-?bite/.test(n) || c.includes('eggbite')) return 7;
+  if(/^paste?r/.test(c)) return 2;
+  if(c.startsWith('sandw')) return 3;
+  const m = String(it.shelf || '').match(/(\d+)\s*(days?|d|weeks?|wks?|w)\b/i);
+  return m ? parseInt(m[1], 10) * (/^w/i.test(m[2]) ? 7 : 1) : 0;
+}
+
 // ---------- logging ----------
 async function log(action, payload){
   try{
@@ -127,7 +158,7 @@ async function loadItems(){
 
   const all = (data || []).map(r => ({
     id: r.id,
-    category: r.category || 'Uncategorized',
+    category: effCat(r.category || 'Uncategorized', r.name),
     name: r.name,
     note: r.note || '',
     shelf: r.shelf || '',
@@ -154,8 +185,11 @@ async function loadQuantities(){
   }
   qtyMap = new Map();
   for(const r of (data || [])){
-    const key = keyFor(r.category, r.item_name);
+    const key = keyFor(effCat(r.category, r.item_name), r.item_name);
+    const old = qtyMap.get(key);
+    if(old && old.ts > (r.updated_at || '')) continue;   // two old rows now map to one item: keep the newest
     qtyMap.set(key, {
+      ts: r.updated_at || '',
       qty: clamp0(Number(r.qty || 0)),
       restock: !!r.restock
     });
@@ -328,7 +362,7 @@ function show(view){
 }
 
 function renderCategoryChips(){
-  const cats = Array.from(new Set(items.map(i=>i.category))).sort((a,b)=>a.localeCompare(b));
+  const cats = Array.from(new Set(items.map(i=>i.category))).sort(sortCats);
   const el = $('#categoryChips');
   el.innerHTML = '';
   const mk = (label, value) => {
@@ -376,7 +410,7 @@ function itemCardTemplate(it, st){
   const k = keyFor(it.category, it.name);
   const qty = clamp0(st?.qty || 0);
   const restock = !!st?.restock;
-  const note = [it.note, it.shelf ? `Shelf life: ${it.shelf}` : ''].filter(Boolean).join(' • ');
+  const note = [it.note, shelfDays(it) ? `Shelf life: ${shelfDays(it)} days` : ''].filter(Boolean).join(' • ');
   const par = getPar(it);
   return `
     <div class="item-card" data-key="${escapeHtml(k)}" data-category="${escapeHtml(it.category)}" data-name="${escapeHtml(it.name)}">
@@ -434,7 +468,7 @@ function renderAll(){
     byCat.set(it.category, arr);
   }
 
-  const cats = Array.from(byCat.keys()).sort((a,b)=>a.localeCompare(b));
+  const cats = Array.from(byCat.keys()).sort(sortCats);
   const host = $('#sections');
   host.innerHTML = '';
 
@@ -667,7 +701,7 @@ function orderCats(cats){
   let o = []; try{ o = JSON.parse(localStorage.getItem('phx_cat_order') || '[]'); }catch{}
   return cats.slice().sort((a,b)=>{
     const ia = o.indexOf(a), ib = o.indexOf(b);
-    if(ia < 0 && ib < 0) return a.localeCompare(b);
+    if(ia < 0 && ib < 0) return sortCats(a, b);
     if(ia < 0) return 1; if(ib < 0) return -1; return ia - ib;
   });
 }
@@ -679,12 +713,27 @@ function moveCat(cat, dir){
   try{ localStorage.setItem('phx_cat_order', JSON.stringify(cats)); }catch{}
   renderPullSheet();
 }
-function useByLabel(it){
-  const m = String(it.shelf || '').match(/(\d+)\s*(days?|d|weeks?|wks?|w)\b/i);
-  if(!m) return '';
-  const days = parseInt(m[1], 10) * (/^w/i.test(m[2]) ? 7 : 1);
-  return 'Use by ' + new Date(Date.now() + days * 864e5).toLocaleDateString(undefined, { weekday:'short', month:'numeric', day:'numeric' });
+function useByDate(it){ const d = shelfDays(it); return d ? new Date(Date.now() + d * 864e5) : null; }
+function fmtDate(d){ return d.toLocaleDateString(undefined, { weekday:'short', month:'numeric', day:'numeric' }); }
+function useByLabel(it){ const d = useByDate(it); return d ? 'Use by ' + fmtDate(d) : ''; }
+
+// one sticker per item pulled, grouped by the date that goes on it
+function stickerGroups(){
+  const { restock, byCat } = pullGroups();
+  const all = restock.concat(...byCat.values());
+  const g = new Map();
+  for(const x of all){
+    if(x.qty <= 0) continue;
+    const d = useByDate(x.it); if(!d) continue;
+    const key = d.toDateString();
+    if(!g.has(key)) g.set(key, { date: d, total: 0, parts: new Map() });
+    const e = g.get(key);
+    e.total += x.qty;
+    e.parts.set(x.it.category, (e.parts.get(x.it.category) || 0) + x.qty);
+  }
+  return Array.from(g.values()).sort((a, b)=>a.date - b.date);
 }
+
 function updateSheetProg(){
   const rows = $$('#sheetBody .sheet-row'), done = $$('#sheetBody .sheet-row.done').length;
   $('#sheetProg').textContent = `${done} of ${rows.length} pulled`;
@@ -726,6 +775,13 @@ function renderPullSheet(){
       ${rows.map(x=>row(x, withCat)).join('')}
     </section>`;
   let html = '';
+  const stk = stickerGroups();
+  if(stk.length){
+    html += `<section class="sheet-sec stickers">
+      <div class="sheet-head"><span>Stickers to print</span><span>${stk.reduce((n, e)=>n + e.total, 0)}</span></div>
+      ${stk.map(e=>`<div class="stk-row"><b>${e.total}</b><span class="nm">${escapeHtml(fmtDate(e.date))}<small>${[...e.parts].map(([c, n])=>`${escapeHtml(c)} ${n}`).join(' • ')}</small></span></div>`).join('')}
+    </section>`;
+  }
   if(restock.length) html += block('Restock', restock, true, 'restock', false);
   for(const c of cats) html += block(c, byCat.get(c), false, '', true);
   $('#sheetBody').innerHTML = html;
@@ -1213,6 +1269,12 @@ function wireGlobal(){
 function sheetToText(){
   const { restock, byCat } = pullGroups();
   const lines = [];
+  const stk = stickerGroups();
+  if(stk.length){
+    lines.push('== STICKERS ==');
+    for(const e of stk) lines.push(`${e.total}  ${fmtDate(e.date)}  (${[...e.parts].map(([c, n])=>`${c} ${n}`).join(', ')})`);
+    lines.push('');
+  }
   if(restock.length){
     lines.push('== RESTOCK ==');
     for(const x of restock) lines.push(`${x.qty}  ${x.it.name} (${x.it.category})`);

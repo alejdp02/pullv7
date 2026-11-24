@@ -164,6 +164,11 @@ body:has(:is(input[type=search],input[type=text],input[type=number]):focus) .doc
   #sheetDlg .modal-head,#sheetDlg .tools,#sheetDlg .hint,.mv{display:none!important}
 }
 
+.stk-row{display:flex;align-items:center;gap:14px;padding:10px 14px;border-top:1px solid var(--line)}
+.stk-row b{min-width:44px;font-size:24px;font-variant-numeric:tabular-nums}
+.stk-row small{display:block;color:var(--muted);font-size:12px}
+.sheet-sec.stickers{border-color:var(--accent)}.sheet-sec.stickers .sheet-head{background:var(--accent);color:var(--accent-ink)}
+
 /* login */
 #view-login{min-height:100dvh;display:grid;place-items:center;padding:20px 14px}
 .login{width:min(420px,100%)}
