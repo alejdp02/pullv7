@@ -169,6 +169,13 @@ body:has(:is(input[type=search],input[type=text],input[type=number]):focus) .doc
 .stk-row small{display:block;color:var(--muted);font-size:12px}
 .sheet-sec.stickers{border-color:var(--accent)}.sheet-sec.stickers .sheet-head{background:var(--accent);color:var(--accent-ink)}
 
+.lbl{font-size:13px;font-weight:700;color:var(--muted);margin-bottom:6px}
+.catpick{display:flex;flex-wrap:wrap;gap:8px}
+input[type=range]{min-height:36px;padding:0;border:0;background:transparent;accent-color:var(--accent)}
+.shelf-out{margin-top:6px;font-weight:800;font-size:18px;font-variant-numeric:tabular-nums}
+.three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+@media(max-width:600px){.three{grid-template-columns:1fr}}
+
 /* login */
 #view-login{min-height:100dvh;display:grid;place-items:center;padding:20px 14px}
 .login{width:min(420px,100%)}
@@ -189,7 +196,7 @@ body:has(:is(input[type=search],input[type=text],input[type=number]):focus) .doc
       <h1 class="title">Sign in</h1>
       <div class="muted">Start your pull list for the shift.</div>
       <form id="loginForm" class="form" style="margin-top:18px">
-        <input id="loginEmail" type="email" placeholder="Email" autocomplete="username" required />
+        <input id="loginEmail" type="text" inputmode="email" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Email or username" autocomplete="username" required />
         <input id="loginPass" type="password" placeholder="Password (leave blank for an email link)" autocomplete="current-password" />
         <button class="btn primary" type="submit">Sign in</button>
         <button id="magicLinkBtn" class="btn" type="button">Email me a sign-in link</button>
@@ -292,7 +299,19 @@ body:has(:is(input[type=search],input[type=text],input[type=number]):focus) .doc
         <div class="hint" style="margin-top:8px">Deactivate an item to hide it without deleting its history.</div>
       </section>
 
-      <section id="tab-users" class="hidden"><div id="usersTableWrap" class="card scroll"></div></section>
+      <section id="tab-users" class="hidden">
+        <form id="newUserForm" class="card" style="padding:14px;margin-bottom:14px">
+          <div class="title" style="margin-bottom:10px">Add a new user</div>
+          <div class="three">
+            <input id="nuName" placeholder="Name" autocomplete="off" required />
+            <input id="nuIdent" placeholder="Username or email" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" required />
+            <input id="nuPass" type="text" placeholder="Password (6+ characters)" autocomplete="off" autocapitalize="off" required />
+          </div>
+          <button class="btn primary" type="submit" style="margin-top:10px">Create user</button>
+          <div class="hint" style="margin-top:8px">They sign in with the username or email and this password. New users start as regular users; use Role below to make an admin.</div>
+        </form>
+        <div id="usersTableWrap" class="card scroll"></div>
+      </section>
 
       <section id="tab-logs" class="hidden">
         <div class="tools">
@@ -321,15 +340,25 @@ body:has(:is(input[type=search],input[type=text],input[type=number]):focus) .doc
     <div class="modal-body">
       <form id="itemEditForm" class="form">
         <input type="hidden" id="itemId" />
-        <div class="two">
-          <input id="itemCategory" placeholder="Category (e.g. Pastries)" required />
-          <input id="itemName" placeholder="Item name" required />
+        <input type="hidden" id="itemCategory" />
+        <input type="hidden" id="itemShelf" />
+        <div>
+          <div class="lbl">Category</div>
+          <div id="catPicker" class="catpick" role="group" aria-label="Category"></div>
+          <input id="itemCategoryNew" class="hidden" style="margin-top:8px;width:100%" placeholder="New category name" />
         </div>
-        <div class="two">
-          <input id="itemPar" type="number" min="0" placeholder="PAR (optional)" />
-          <input id="itemShelf" placeholder="Shelf life (e.g. 3 days)" />
+        <div><div class="lbl">Item name</div><input id="itemName" style="width:100%" placeholder="e.g. Butter croissant" required /></div>
+        <div><div class="lbl">PAR</div><input id="itemPar" style="width:100%" type="number" inputmode="numeric" min="0" placeholder="How many to have (optional)" /></div>
+        <div>
+          <div class="lbl">Shelf life in days (sets the sticker date)</div>
+          <div class="row">
+            <button type="button" class="btn small-btn" data-sd="-1" aria-label="One day less">−</button>
+            <input id="itemShelfDays" class="grow" type="range" min="0" max="30" step="1" value="0" />
+            <button type="button" class="btn small-btn" data-sd="1" aria-label="One day more">+</button>
+          </div>
+          <div id="itemShelfOut" class="shelf-out">No expiry sticker</div>
         </div>
-        <textarea id="itemNote" placeholder="Note (optional), e.g. 6–8 depending on day" rows="3"></textarea>
+        <div><div class="lbl">Note</div><textarea id="itemNote" placeholder="Optional, e.g. 6–8 depending on day" rows="3"></textarea></div>
         <label class="toggle"><input id="itemActive" type="checkbox" checked /><span>Active</span></label>
         <div class="row" style="justify-content:flex-end">
           <button id="deleteItemBtn" class="btn danger" type="button">Delete</button>

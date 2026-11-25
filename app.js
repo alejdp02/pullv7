@@ -70,16 +70,22 @@ function catRank(c){
 }
 function sortCats(a, b){ return catRank(a) - catRank(b) || String(a).localeCompare(String(b)); }
 
-// Shelf life in days: Pastries 2, Sandwiches 3, Cake Pops 3, Egg Bites 7 (otherwise the item's own shelf field)
+// Shelf life in days. The number set on the item (Admin slider) wins.
+// If an item has none, use the category default: Pastries 2, Sandwiches 3, Cake Pops 3, Egg Bites 7.
+function parseShelfDays(txt){
+  const m = String(txt || '').match(/(\d+)\s*(days?|d|weeks?|wks?|w)\b/i);
+  return m ? parseInt(m[1], 10) * (/^w/i.test(m[2]) ? 7 : 1) : null;
+}
 function shelfDays(it){
+  const own = parseShelfDays(it.shelf);
+  if(own !== null) return own;
   const n = String(it.name || '').toLowerCase();
   const c = String(it.category || '').toLowerCase().replace(/[^a-z]/g, '');
   if(/cake\s*-?pop/.test(n) || c.includes('cakepop')) return 3;
   if(/egg\s*-?bite/.test(n) || c.includes('eggbite')) return 7;
   if(/^paste?r/.test(c)) return 2;
   if(c.startsWith('sandw')) return 3;
-  const m = String(it.shelf || '').match(/(\d+)\s*(days?|d|weeks?|wks?|w)\b/i);
-  return m ? parseInt(m[1], 10) * (/^w/i.test(m[2]) ? 7 : 1) : 0;
+  return 0;
 }
 
 // ---------- logging ----------
@@ -124,7 +130,7 @@ async function ensureProfileForCurrentUser(display_name_if_new){
     const row = {
       id: u.id,
       email: u.email,
-      display_name: display_name_if_new || (u.email ? u.email.split('@')[0] : 'user'),
+      display_name: display_name_if_new || u.user_metadata?.display_name || (u.email ? u.email.split('@')[0] : 'user'),
       role: 'user',
       active: true
     };
@@ -855,7 +861,7 @@ async function adminRenderUsers(){
   }
   const rows = (data||[]).map(u=>`
     <tr>
-      <td><b>${escapeHtml(u.display_name || u.email || '')}</b><div class="muted2">${escapeHtml(u.email || '')}</div></td>
+      <td><b>${escapeHtml(u.display_name || u.email || '')}</b><div class="muted2">${escapeHtml(shownIdent(u.email))}</div></td>
       <td>${escapeHtml(u.role || 'user')}</td>
       <td>${u.active ? '✅' : '⛔'}</td>
       <td class="right">
@@ -975,7 +981,7 @@ async function adminRenderItems(){
     <tr>
       <td><b>${escapeHtml(r.name||'')}</b><div class="muted2">${escapeHtml(r.category||'')}</div></td>
       <td>${escapeHtml(r.note||'')}</td>
-      <td>${escapeHtml(r.shelf||'')}</td>
+      <td>${shelfDays(r) ? shelfDays(r) + ' d' : '—'}</td>
       <td>${r.par ?? ''}</td>
       <td>${(r.active ?? true) ? '✅' : '⛔'}</td>
       <td class="right">
@@ -985,7 +991,7 @@ async function adminRenderItems(){
   `).join('');
   $('#itemsTableWrap').innerHTML = `
     <table class="table">
-      <thead><tr><th>Item</th><th>Note</th><th>Shelf</th><th>PAR</th><th>Active</th><th class="right">Action</th></tr></thead>
+      <thead><tr><th>Item</th><th>Note</th><th>Shelf life</th><th>PAR</th><th>Active</th><th class="right">Action</th></tr></thead>
       <tbody>${rows || `<tr><td colspan="6" class="muted">No items</td></tr>`}</tbody>
     </table>
   `;
@@ -1004,10 +1010,10 @@ async function openItemEditor(id){
 
   $('#itemEditTitle').textContent = `Edit: ${data.name || ''}`;
   $('#itemId').value = data.id;
-  $('#itemCategory').value = data.category || '';
+  setCategoryUI(canonCat(effCat(data.category || '', data.name)));
   $('#itemName').value = data.name || '';
   $('#itemNote').value = data.note || '';
-  $('#itemShelf').value = data.shelf || '';
+  setShelfUI(parseShelfDays(data.shelf), true);
   $('#itemPar').value = (data.par ?? '');
   $('#itemActive').checked = (data.active ?? true);
 
@@ -1018,10 +1024,10 @@ async function openItemEditor(id){
 function openNewItem(){
   $('#itemEditTitle').textContent = 'Add item';
   $('#itemId').value = '';
-  $('#itemCategory').value = '';
+  setCategoryUI('');
   $('#itemName').value = '';
   $('#itemNote').value = '';
-  $('#itemShelf').value = '';
+  setShelfUI(null, false);
   $('#itemPar').value = '';
   $('#itemActive').checked = true;
   $('#deleteItemBtn').style.display = 'none';
@@ -1119,7 +1125,7 @@ function wireGlobal(){
     e.preventDefault();
     try{
       $('#loginMsg').textContent = '';
-      const email = $('#loginEmail').value.trim();
+      const email = toLoginEmail($('#loginEmail').value);
       const pass = $('#loginPass').value;
       if(pass && pass.trim() !== ''){
         const { data, error } = await supa.auth.signInWithPassword({ email, password: pass });
@@ -1352,6 +1358,72 @@ async function adminOpen(){
 })();
 
 
+// ---------- admin: item form helpers ----------
+let shelfTouched = false;
+function canonCat(c){ const r = catRank(c); return r === 0 ? 'Pastries' : r === 1 ? 'Sandwiches' : r === 2 ? 'Cake Pops' : r === 3 ? 'Egg Bites' : c; }
+
+function setCategoryUI(cat){
+  const base = ['Pastries', 'Sandwiches', 'Cake Pops', 'Egg Bites'];
+  const extra = [...new Set(items.map(i=>i.category))].filter(c=>catRank(c) === 4).sort();
+  if(cat && catRank(cat) === 4 && !extra.includes(cat)) extra.push(cat);
+  $('#itemCategory').value = cat || '';
+  const box = $('#catPicker'); box.innerHTML = '';
+  const mk = (label, val)=>{
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'chip' + (val === cat ? ' active' : '');
+    b.textContent = label; b.dataset.cat = val; box.appendChild(b);
+  };
+  base.concat(extra).forEach(c=>mk(c, c));
+  mk('+ New', '__new');
+  $('#itemCategoryNew').classList.add('hidden');
+  $('#itemCategoryNew').value = '';
+}
+
+function paintShelf(days){
+  $('#itemShelfDays').value = days;
+  $('#itemShelf').value = `${days} ${days === 1 ? 'day' : 'days'}`;   // saved on the item; drives the sticker dates
+  $('#itemShelfOut').textContent = days === 0
+    ? 'No expiry sticker'
+    : `${days} ${days === 1 ? 'day' : 'days'} • sticker says ${fmtDate(new Date(Date.now() + days * 864e5))}`;
+}
+function setShelfUI(days, touched){
+  if(days === null || days === undefined){
+    days = shelfDays({ category: $('#itemCategory').value, name: $('#itemName').value, shelf: '' });   // category default
+    touched = false;
+  }
+  shelfTouched = !!touched;
+  paintShelf(Math.min(30, Math.max(0, days)));
+}
+
+// ---------- admin: usernames + creating users ----------
+const USER_DOMAIN = 'phoenixpull.app';   // a username like "maria" signs in as maria@phoenixpull.app behind the scenes
+function toLoginEmail(v){
+  v = String(v || '').trim();
+  return v.includes('@') ? v : `${v.toLowerCase().replace(/[^a-z0-9._-]/g, '')}@${USER_DOMAIN}`;
+}
+function shownIdent(e){ e = String(e || ''); return e.endsWith('@' + USER_DOMAIN) ? e.slice(0, -(USER_DOMAIN.length + 1)) : e; }
+
+async function adminCreateUser(name, ident, pass){
+  if(!isAdmin()){ toast('Admins only'); return false; }
+  const email = toLoginEmail(ident);
+  if(!email.split('@')[0]){ toast('Username can use letters and numbers'); return false; }
+  if(pass.length < 6){ toast('Password needs at least 6 characters'); return false; }
+  // a separate, non-saving client so the admin stays signed in
+  const tmp = window.supabase.createClient(supabaseUrl, supabaseAnonKey, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, storageKey: 'phx-create-user' }
+  });
+  const { data, error } = await tmp.auth.signUp({ email, password: pass, options: { data: { display_name: name } } });
+  if(error){ toast(error.message || 'Could not create user'); return false; }
+  const uid = data.user?.id;
+  if(!uid || (data.user.identities && data.user.identities.length === 0)){ toast('That username or email already exists'); return false; }
+  const row = { id: uid, email, display_name: name, role: 'user', active: true };
+  let up = await supa.from('profiles').upsert(row);
+  if(up.error && data.session) up = await tmp.from('profiles').upsert(row);
+  if(up.error) toast('User created. Their profile is finished when they first sign in.');
+  await log('admin_user_create', { email });
+  return true;
+}
+
 // ---------- UI wiring (layout v6) ----------
 (function wireUi(){
   const box = $('#search');
@@ -1410,6 +1482,36 @@ async function adminOpen(){
   // retry unsent changes when signal returns
   window.addEventListener('online', flushPending);
   setInterval(flushPending, 20000);
+
+  // item form: category picker, shelf-life slider
+  $('#catPicker').addEventListener('click', (e)=>{
+    const b = e.target.closest('[data-cat]'); if(!b) return;
+    $$('#catPicker .chip').forEach(x=>x.classList.toggle('active', x === b));
+    const isNew = b.dataset.cat === '__new';
+    $('#itemCategoryNew').classList.toggle('hidden', !isNew);
+    if(isNew){ $('#itemCategory').value = $('#itemCategoryNew').value.trim(); $('#itemCategoryNew').focus(); }
+    else $('#itemCategory').value = b.dataset.cat;
+    if(!shelfTouched) setShelfUI(null, false);
+  });
+  $('#itemCategoryNew').addEventListener('input', (e)=>{ $('#itemCategory').value = e.target.value.trim(); });
+  $('#itemName').addEventListener('input', ()=>{ if(!shelfTouched) setShelfUI(null, false); });
+  $('#itemShelfDays').addEventListener('input', (e)=>{ shelfTouched = true; paintShelf(Number(e.target.value)); });
+  $('#itemEditForm').addEventListener('click', (e)=>{
+    const b = e.target.closest('[data-sd]'); if(!b) return;
+    shelfTouched = true;
+    paintShelf(Math.min(30, Math.max(0, Number($('#itemShelfDays').value) + Number(b.dataset.sd))));
+  });
+
+  // create user
+  $('#newUserForm').addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const name = $('#nuName').value.trim(), ident = $('#nuIdent').value.trim(), pass = $('#nuPass').value;
+    if(!name || !ident || !pass){ toast('Fill in all 3 fields'); return; }
+    const btn = e.submitter; if(btn) btn.disabled = true;
+    const ok = await adminCreateUser(name, ident, pass);
+    if(btn) btn.disabled = false;
+    if(ok){ e.target.reset(); await adminRenderUsers(); toast(`Created ${name}`); }
+  });
 
   document.addEventListener('focusin', (e)=>{ if(e.target.matches && e.target.matches('.qty-input')) e.target.select(); });
   $$('dialog').forEach(d=>d.addEventListener('click', (e)=>{ if(e.target === d) d.close(); }));
